@@ -1,0 +1,122 @@
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { DocumentJobPayload, JobType } from "@/types/ingestion";
+
+export async function enqueueDocumentJob(params: {
+  companyId: string;
+  projectId: string | null;
+  documentId: string;
+  jobType: JobType;
+  payload: DocumentJobPayload;
+  jobKey?: string;
+}) {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("jobs")
+    .insert({
+      company_id: params.companyId,
+      project_id: params.projectId,
+      document_id: params.documentId,
+      job_type: params.jobType,
+      status: "queued",
+      payload: params.payload,
+      job_key: params.jobKey ?? null,
+    })
+    .select("id, status")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+export async function claimNextJob(workerId: string) {
+  const supabase = createAdminClient();
+  const { data: queuedJobs, error: fetchError } = await supabase
+    .from("jobs")
+    .select("id")
+    .eq("status", "queued")
+    .order("created_at", { ascending: true })
+    .limit(1);
+
+  if (fetchError) {
+    throw fetchError;
+  }
+
+  const jobId = queuedJobs?.[0]?.id;
+
+  if (!jobId) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("jobs")
+    .update({
+      status: "in_progress",
+      locked_at: new Date().toISOString(),
+      locked_by: workerId,
+      started_at: new Date().toISOString(),
+    })
+    .eq("id", jobId)
+    .eq("status", "queued")
+    .select("*")
+    .single();
+
+  if (error) {
+    return null;
+  }
+
+  return data;
+}
+
+export async function completeJob(jobId: string) {
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("jobs")
+    .update({
+      status: "completed",
+      completed_at: new Date().toISOString(),
+      locked_at: null,
+      locked_by: null,
+      job_key: null,
+    })
+    .eq("id", jobId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function failJob(jobId: string, lastError: string) {
+  const supabase = createAdminClient();
+  const { data: currentJob, error: fetchError } = await supabase
+    .from("jobs")
+    .select("attempts, max_attempts")
+    .eq("id", jobId)
+    .single();
+
+  if (fetchError || !currentJob) {
+    throw fetchError ?? new Error("Unable to load failed job.");
+  }
+
+  const attempts = currentJob.attempts + 1;
+  const nextStatus = attempts >= currentJob.max_attempts ? "failed" : "queued";
+  const { error } = await supabase
+    .from("jobs")
+    .update({
+      attempts,
+      last_error: lastError,
+      status: nextStatus,
+      locked_at: null,
+      locked_by: null,
+      completed_at: nextStatus === "failed" ? new Date().toISOString() : null,
+    })
+    .eq("id", jobId);
+
+  if (error) {
+    throw error;
+  }
+
+  return nextStatus;
+}
