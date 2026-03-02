@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+import { BillingActions } from "@/components/settings/billing-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { canAccessFullReport } from "@/lib/billing/entitlements";
 import { createClient } from "@/lib/supabase/server";
 
-function visibleFindingsCount(isFreePreview: boolean) {
-  return isFreePreview ? 3 : Number.POSITIVE_INFINITY;
+function visibleFindingsCount(isLockedPreview: boolean) {
+  return isLockedPreview ? 3 : Number.POSITIVE_INFINITY;
 }
 
 export default async function ScanPage({
@@ -59,7 +61,9 @@ export default async function ScanPage({
         .maybeSingle()
     : { data: null };
 
-  const visibleCount = visibleFindingsCount(scan.is_free_preview);
+  const hasFullAccess = await canAccessFullReport(scan.company_id, scan.is_free_preview);
+  const isLockedPreview = scan.is_free_preview && !hasFullAccess;
+  const visibleCount = visibleFindingsCount(isLockedPreview);
   const isCompleted = scan.status === "completed";
   const isProcessing = scan.status !== "completed";
   const isFailed = scan.status === "failed";
@@ -90,7 +94,11 @@ export default async function ScanPage({
             <Button asChild variant="secondary">
               <Link href="/app">Back to dashboard</Link>
             </Button>
-            {scan.is_free_preview ? <Button>Unlock full report</Button> : null}
+            {isLockedPreview ? (
+              <Button asChild>
+                <Link href="/app/settings">Unlock full report</Link>
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -113,6 +121,21 @@ export default async function ScanPage({
             </div>
           </CardContent>
         </Card>
+
+        {isLockedPreview ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Unlock full report</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-muted">
+              <p>
+                This is your free summary. Upgrade the workspace to unlock the full findings set,
+                full obligations list, and ongoing project intelligence.
+              </p>
+              <BillingActions hasSubscription={false} showPortal={false} />
+            </CardContent>
+          </Card>
+        ) : null}
 
         {isFailed ? (
           <Card>

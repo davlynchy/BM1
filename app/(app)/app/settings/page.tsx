@@ -1,3 +1,4 @@
+import { BillingActions } from "@/components/settings/billing-actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getActiveWorkspace } from "@/lib/auth/workspace";
 import { createClient } from "@/lib/supabase/server";
@@ -66,6 +67,9 @@ export default async function SettingsPage() {
             <p className="font-medium text-text">Current period end</p>
             <p>{subscription?.current_period_end ?? "Not available"}</p>
           </div>
+        </CardContent>
+        <CardContent>
+          <BillingActions hasSubscription={["active", "trialing"].includes(subscription?.status ?? "")} />
         </CardContent>
       </Card>
     </main>

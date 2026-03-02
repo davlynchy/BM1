@@ -5,6 +5,8 @@ import {
   getPendingScanCookieName,
   getPendingScanCookieOptions,
 } from "@/lib/intake/pending-scan";
+import { getRequestIp } from "@/lib/api/request";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const MAX_FILE_SIZE = 30 * 1024 * 1024;
@@ -41,6 +43,17 @@ async function ensureContractsBucket() {
 
 export async function POST(request: Request) {
   try {
+    const ip = getRequestIp(request);
+    await enforceRateLimit({
+      scope: "public_intake_upload",
+      key: ip,
+      limit: 10,
+      windowMinutes: 60,
+      metadata: {
+        ip,
+      },
+    });
+
     const formData = await request.formData();
     const file = formData.get("file");
 

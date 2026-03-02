@@ -120,3 +120,26 @@ export async function failJob(jobId: string, lastError: string) {
 
   return nextStatus;
 }
+
+export async function requeueStaleJobs(staleBeforeMs = 15 * 60 * 1000) {
+  const supabase = createAdminClient();
+  const threshold = new Date(Date.now() - staleBeforeMs).toISOString();
+  const { data, error } = await supabase
+    .from("jobs")
+    .update({
+      status: "queued",
+      locked_at: null,
+      locked_by: null,
+      started_at: null,
+      last_error: "Recovered stale in_progress job.",
+    })
+    .eq("status", "in_progress")
+    .lt("locked_at", threshold)
+    .select("id, document_id, job_type, payload");
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? [];
+}

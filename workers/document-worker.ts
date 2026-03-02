@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 
-import { failJob, claimNextJob, completeJob } from "@/lib/jobs/queue";
+import { failJob, claimNextJob, completeJob, requeueStaleJobs } from "@/lib/jobs/queue";
 import { updateDocumentStatus } from "@/lib/jobs/documents";
 import { failScanForDocument, queueScanForDocument } from "@/lib/jobs/scans";
+import { log } from "@/lib/logger";
 import { runDocumentJob } from "@/lib/jobs/worker";
 import type { DocumentJobPayload, JobType } from "@/types/ingestion";
 
 const POLL_INTERVAL_MS = 2000;
+const STALE_JOB_SWEEP_INTERVAL = 30;
 
 async function tick(workerId: string) {
   const job = await claimNextJob(workerId);
@@ -55,12 +57,28 @@ async function tick(workerId: string) {
 
 async function main() {
   const workerId = `worker:${randomUUID()}`;
+  let idleLoops = 0;
 
   for (;;) {
+    if (idleLoops % STALE_JOB_SWEEP_INTERVAL === 0) {
+      const recoveredJobs = await requeueStaleJobs();
+
+      if (recoveredJobs.length) {
+        log("warn", "Recovered stale jobs", {
+          workerId,
+          recoveredJobCount: recoveredJobs.length,
+          recoveredJobIds: recoveredJobs.map((job) => job.id),
+        });
+      }
+    }
+
     const foundJob = await tick(workerId);
 
     if (!foundJob) {
+      idleLoops += 1;
       await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    } else {
+      idleLoops = 0;
     }
   }
 }

@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 
 import { ensurePrivateBuckets, buildCanonicalStoragePath, getBucketForDocumentType, uploadProjectFile } from "@/lib/documents/storage";
 import { enqueueDocumentJob } from "@/lib/jobs/queue";
+import { getRequestIp } from "@/lib/api/request";
 import { requireProjectAccess } from "@/lib/projects/access";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 const MAX_FILE_SIZE = 200 * 1024 * 1024;
 const ALLOWED_TYPES = new Set([
@@ -20,6 +22,18 @@ export async function POST(
   try {
     const { projectId } = await params;
     const { supabase, user, project } = await requireProjectAccess(projectId);
+    await enforceRateLimit({
+      scope: "project_upload",
+      key: String(user.id),
+      limit: 25,
+      windowMinutes: 30,
+      companyId: String(project.company_id),
+      userId: String(user.id),
+      metadata: {
+        ip: getRequestIp(request),
+        projectId,
+      },
+    });
     const formData = await request.formData();
     const files = formData.getAll("files").filter((entry): entry is File => entry instanceof File);
     const requestedType = String(formData.get("documentType") ?? "").trim();

@@ -8,7 +8,9 @@ import {
   insertAssistantMessage,
   loadAssistantMessages,
 } from "@/lib/assistant/store";
+import { getRequestIp } from "@/lib/api/request";
 import { requireProjectAccess } from "@/lib/projects/access";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 export async function POST(
   request: Request,
@@ -17,6 +19,18 @@ export async function POST(
   try {
     const { projectId } = await params;
     const { user, project } = await requireProjectAccess(projectId);
+    await enforceRateLimit({
+      scope: "assistant",
+      key: String(user.id),
+      limit: 30,
+      windowMinutes: 10,
+      companyId: String(project.company_id),
+      userId: String(user.id),
+      metadata: {
+        ip: getRequestIp(request),
+        projectId,
+      },
+    });
     const body = (await request.json()) as { message?: string; threadId?: string | null };
     const message = String(body.message ?? "").trim();
 

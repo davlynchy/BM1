@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import { canStartFreeScan } from "@/lib/billing/entitlements";
 import {
   buildCanonicalStoragePath,
   ensurePrivateBuckets,
@@ -57,12 +58,7 @@ export async function completePendingScanAction(formData: FormData) {
     redirect("/signup?message=Finish+creating+your+workspace+first.");
   }
 
-  const { count: scanCount } = await supabase
-    .from("contract_scans")
-    .select("id", { count: "exact", head: true })
-    .eq("company_id", companyId);
-
-  const isFreePreview = (scanCount ?? 0) === 0;
+  const isFreePreview = await canStartFreeScan(companyId);
 
   const { data: project, error: projectError } = await supabase
     .from("projects")
