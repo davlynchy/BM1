@@ -52,6 +52,33 @@ export async function createAssistantThread(params: {
   return created;
 }
 
+export async function getValidatedAssistantThread(params: {
+  threadId: string;
+  companyId: string;
+  projectId: string;
+  userId: string;
+}) {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("assistant_threads")
+    .select("id, title")
+    .eq("id", params.threadId)
+    .eq("company_id", params.companyId)
+    .eq("project_id", params.projectId)
+    .eq("created_by", params.userId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error("Assistant thread not found for this project.");
+  }
+
+  return data;
+}
+
 export async function loadAssistantMessages(threadId: string) {
   const supabase = createAdminClient();
   const { data, error } = await supabase

@@ -4,6 +4,7 @@ import { generateAssistantReply } from "@/lib/assistant/respond";
 import { retrieveProjectSources } from "@/lib/assistant/retrieval";
 import {
   createAssistantThread,
+  getValidatedAssistantThread,
   getOrCreateAssistantThread,
   insertAssistantMessage,
   loadAssistantMessages,
@@ -46,7 +47,12 @@ export async function POST(
             userId: String(user.id),
           })
         : body.threadId && body.threadId.length
-          ? { id: body.threadId }
+          ? await getValidatedAssistantThread({
+              threadId: body.threadId,
+              companyId: String(project.company_id),
+              projectId: String(project.id),
+              userId: String(user.id),
+            })
           : await getOrCreateAssistantThread({
               companyId: String(project.company_id),
               projectId: String(project.id),
