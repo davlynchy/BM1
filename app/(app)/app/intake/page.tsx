@@ -27,7 +27,7 @@ export default async function IntakePage({
     <main className="py-6">
       <div className="mx-auto max-w-3xl space-y-6">
         <div className="space-y-3">
-          <h1 className="font-[var(--font-heading)] text-4xl">Name this project</h1>
+          <h1 className="font-heading text-4xl">Name this project</h1>
           <p className="text-muted">
             Your contract is staged. Create the project workspace and generate the first
             commercial summary.

@@ -116,7 +116,7 @@ export default async function AppDashboardPage({
         <div className="mb-8 flex items-end justify-between gap-4">
           <div>
             <Badge>Workspace</Badge>
-            <h1 className="mt-3 font-[var(--font-heading)] text-4xl">Project Dashboard</h1>
+            <h1 className="mt-3 font-heading text-4xl">Project Dashboard</h1>
             <p className="mt-2 text-muted">
               Commercial control across contracts, claims, variations, and risk for{" "}
               {workspace?.company?.name ?? "your company"}.

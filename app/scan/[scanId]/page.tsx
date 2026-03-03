@@ -82,7 +82,7 @@ export default async function ScanPage({
           <div className="space-y-3">
             <Badge>{scan.is_free_preview ? "Free summary" : "Full report"}</Badge>
             <div>
-              <h1 className="font-[var(--font-heading)] text-4xl">
+              <h1 className="font-heading text-4xl">
                 {project?.name ?? "Contract scan"}
               </h1>
               <p className="mt-2 text-muted">

@@ -80,7 +80,7 @@ export async function completePendingScanAction(formData: FormData) {
   await ensurePrivateBuckets();
 
   const documentType = "contract";
-  const bucket = getBucketForDocumentType(documentType);
+  const bucket = getBucketForDocumentType(documentType, "r2");
   const { data: document, error: documentError } = await supabase
     .from("documents")
     .insert({
@@ -89,6 +89,7 @@ export async function completePendingScanAction(formData: FormData) {
       name: pendingScan.fileName,
       source_filename: pendingScan.fileName,
       document_type: documentType,
+      storage_provider: "r2",
       storage_bucket: bucket,
       storage_path: "",
       mime_type: pendingScan.mimeType,
@@ -114,8 +115,10 @@ export async function completePendingScanAction(formData: FormData) {
   });
 
   await moveStoredFile({
+    sourceProvider: pendingScan.provider ?? "supabase",
     sourceBucket: pendingScan.bucket,
     sourcePath: pendingScan.storagePath,
+    destinationProvider: "r2",
     destinationBucket: bucket,
     destinationPath: canonicalStoragePath,
   });
@@ -123,9 +126,12 @@ export async function completePendingScanAction(formData: FormData) {
   const { error: documentUpdateError } = await supabase
     .from("documents")
     .update({
+      storage_provider: "r2",
       storage_bucket: bucket,
       storage_path: canonicalStoragePath,
       parse_status: "queued",
+      upload_state: "uploaded",
+      upload_completed_at: new Date().toISOString(),
     })
     .eq("id", document.id);
 
@@ -168,6 +174,7 @@ export async function completePendingScanAction(formData: FormData) {
       projectId: project.id,
       bucket,
       storagePath: canonicalStoragePath,
+      storageProvider: "r2",
       mimeType: pendingScan.mimeType,
       documentType,
       fileName: pendingScan.fileName,

@@ -24,6 +24,7 @@ export const JOB_STATUSES = ["queued", "in_progress", "completed", "failed"] as 
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
 export type DocumentUploadKind = "contract" | "project_document" | "email";
+export type DocumentStorageProvider = "supabase" | "r2";
 
 export type ExtractedPage = {
   pageNumber: number;
@@ -53,6 +54,7 @@ export type DocumentJobPayload = {
   projectId: string | null;
   bucket: string;
   storagePath: string;
+  storageProvider?: DocumentStorageProvider;
   mimeType: string | null;
   documentType: string;
   fileName: string;

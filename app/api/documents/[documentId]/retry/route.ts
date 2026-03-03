@@ -20,7 +20,7 @@ export async function POST(
 
     const { data: document, error } = await supabase
       .from("documents")
-      .select("id, company_id, project_id, storage_bucket, storage_path, mime_type, document_type, name")
+      .select("id, company_id, project_id, storage_provider, storage_bucket, storage_path, mime_type, document_type, name")
       .eq("id", documentId)
       .single();
 
@@ -63,6 +63,7 @@ export async function POST(
         projectId: document.project_id,
         bucket: document.storage_bucket,
         storagePath: document.storage_path,
+        storageProvider: (document.storage_provider ?? "supabase") as "supabase" | "r2",
         mimeType: document.mime_type,
         documentType: document.document_type,
         fileName: document.name,

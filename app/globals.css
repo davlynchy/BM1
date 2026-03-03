@@ -54,3 +54,11 @@ textarea {
 .text-balance {
   text-wrap: balance;
 }
+
+.font-heading {
+  font-family: var(--font-heading), sans-serif;
+}
+
+.font-body {
+  font-family: var(--font-body), sans-serif;
+}

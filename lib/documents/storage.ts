@@ -1,8 +1,10 @@
 import path from "node:path";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getR2Bucket, putR2Object, downloadR2Object } from "@/lib/storage/r2";
+import type { DocumentStorageProvider } from "@/types/uploads";
 
-const BUCKETS = {
+const SUPABASE_BUCKETS = {
   contract: "contracts",
   project_document: "project-documents",
   email: "emails",
@@ -15,19 +17,19 @@ const BUCKET_CONFIG: Array<{
   allowedMimeTypes?: string[];
 }> = [
   {
-    name: BUCKETS.contract,
+    name: SUPABASE_BUCKETS.contract,
     fileSizeLimit: "200MiB",
   },
   {
-    name: BUCKETS.project_document,
+    name: SUPABASE_BUCKETS.project_document,
     fileSizeLimit: "200MiB",
   },
   {
-    name: BUCKETS.email,
+    name: SUPABASE_BUCKETS.email,
     fileSizeLimit: "50MiB",
   },
   {
-    name: BUCKETS.generated,
+    name: SUPABASE_BUCKETS.generated,
     fileSizeLimit: "100MiB",
   },
 ];
@@ -46,16 +48,23 @@ export function sanitizeFilename(fileName: string) {
   return `${sanitizedBase}${sanitizedExt}`;
 }
 
-export function getBucketForDocumentType(documentType: string) {
+export function getBucketForDocumentType(
+  documentType: string,
+  provider: DocumentStorageProvider = "r2",
+) {
+  if (provider === "r2") {
+    return getR2Bucket();
+  }
+
   if (documentType === "contract") {
-    return BUCKETS.contract;
+    return SUPABASE_BUCKETS.contract;
   }
 
   if (documentType === "email") {
-    return BUCKETS.email;
+    return SUPABASE_BUCKETS.email;
   }
 
-  return BUCKETS.project_document;
+  return SUPABASE_BUCKETS.project_document;
 }
 
 export function buildCanonicalStoragePath(params: {
@@ -113,66 +122,98 @@ export async function ensurePrivateBuckets() {
 }
 
 export async function moveStoredFile(params: {
+  sourceProvider?: DocumentStorageProvider;
   sourceBucket: string;
   sourcePath: string;
+  destinationProvider?: DocumentStorageProvider;
   destinationBucket: string;
   destinationPath: string;
 }) {
-  const supabase = createAdminClient();
-  const { data, error } = await supabase.storage
-    .from(params.sourceBucket)
-    .download(params.sourcePath);
-
-  if (error || !data) {
-    throw error ?? new Error("Unable to download source file.");
-  }
-
+  const sourceProvider = params.sourceProvider ?? "supabase";
+  const destinationProvider = params.destinationProvider ?? "r2";
+  const data = await downloadStoredFile({
+    provider: sourceProvider,
+    bucket: params.sourceBucket,
+    storagePath: params.sourcePath,
+  });
   const uploadBuffer = Buffer.from(await data.arrayBuffer());
-  const { error: uploadError } = await supabase.storage
-    .from(params.destinationBucket)
-    .upload(params.destinationPath, uploadBuffer, {
-      upsert: true,
+
+  if (destinationProvider === "r2") {
+    await putR2Object({
+      key: params.destinationPath,
+      body: uploadBuffer,
       contentType: data.type || undefined,
     });
+  } else {
+    const supabase = createAdminClient();
+    const { error: uploadError } = await supabase.storage
+      .from(params.destinationBucket)
+      .upload(params.destinationPath, uploadBuffer, {
+        upsert: true,
+        contentType: data.type || undefined,
+      });
 
-  if (uploadError) {
-    throw uploadError;
+    if (uploadError) {
+      throw uploadError;
+    }
   }
 
   if (
+    sourceProvider !== destinationProvider ||
     params.sourceBucket !== params.destinationBucket ||
     params.sourcePath !== params.destinationPath
   ) {
-    const { error: removeError } = await supabase.storage
-      .from(params.sourceBucket)
-      .remove([params.sourcePath]);
+    if (sourceProvider === "supabase") {
+      const supabase = createAdminClient();
+      const { error: removeError } = await supabase.storage
+        .from(params.sourceBucket)
+        .remove([params.sourcePath]);
 
-    if (removeError) {
-      throw removeError;
+      if (removeError) {
+        throw removeError;
+      }
     }
   }
 }
 
 export async function uploadProjectFile(params: {
+  provider?: DocumentStorageProvider;
   bucket: string;
   storagePath: string;
   file: File;
 }) {
-  const supabase = createAdminClient();
   const fileBuffer = Buffer.from(await params.file.arrayBuffer());
-  const { error } = await supabase.storage
-    .from(params.bucket)
-    .upload(params.storagePath, fileBuffer, {
-      upsert: false,
+  const provider = params.provider ?? "supabase";
+
+  if (provider === "r2") {
+    await putR2Object({
+      key: params.storagePath,
+      body: fileBuffer,
       contentType: params.file.type,
     });
+    return;
+  }
+
+  const supabase = createAdminClient();
+  const { error } = await supabase.storage.from(params.bucket).upload(params.storagePath, fileBuffer, {
+    upsert: false,
+    contentType: params.file.type,
+  });
 
   if (error) {
     throw error;
   }
 }
 
-export async function downloadStoredFile(params: { bucket: string; storagePath: string }) {
+export async function downloadStoredFile(params: {
+  provider?: DocumentStorageProvider;
+  bucket: string;
+  storagePath: string;
+}) {
+  if ((params.provider ?? "supabase") === "r2") {
+    return downloadR2Object(params.storagePath);
+  }
+
   const supabase = createAdminClient();
   const { data, error } = await supabase.storage
     .from(params.bucket)

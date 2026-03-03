@@ -1,19 +1,13 @@
 import { NextResponse } from "next/server";
 
 import { ensurePrivateBuckets, buildCanonicalStoragePath, getBucketForDocumentType, uploadProjectFile } from "@/lib/documents/storage";
+import { ALLOWED_DOCUMENT_TYPE_SET } from "@/lib/documents/upload-policy";
 import { enqueueDocumentJob } from "@/lib/jobs/queue";
 import { getRequestIp } from "@/lib/api/request";
 import { requireProjectAccess } from "@/lib/projects/access";
 import { enforceRateLimit } from "@/lib/rate-limit";
 
 const MAX_FILE_SIZE = 200 * 1024 * 1024;
-const ALLOWED_TYPES = new Set([
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "text/plain",
-  "message/rfc822",
-]);
 
 export async function POST(
   request: Request,
@@ -47,7 +41,7 @@ export async function POST(
     const uploadedDocuments = [];
 
     for (const file of files) {
-      if (!ALLOWED_TYPES.has(file.type)) {
+      if (!ALLOWED_DOCUMENT_TYPE_SET.has(file.type as never)) {
         return NextResponse.json({ error: `Unsupported file type for ${file.name}.` }, { status: 400 });
       }
 
@@ -56,7 +50,7 @@ export async function POST(
       }
 
       const documentType = requestedType || (file.type === "message/rfc822" ? "email" : "project_document");
-      const bucket = getBucketForDocumentType(documentType);
+      const bucket = getBucketForDocumentType(documentType, "supabase");
       const { data: document, error: documentError } = await supabase
         .from("documents")
         .insert({
@@ -65,12 +59,15 @@ export async function POST(
           name: file.name,
           source_filename: file.name,
           document_type: documentType,
+          storage_provider: "supabase",
           storage_bucket: bucket,
           storage_path: "",
           mime_type: file.type,
           file_size: file.size,
           parse_status: "uploaded",
           uploaded_by: user.id,
+          upload_state: "uploaded",
+          upload_completed_at: new Date().toISOString(),
         })
         .select("id")
         .single();
@@ -88,6 +85,7 @@ export async function POST(
       });
 
       await uploadProjectFile({
+        provider: "supabase",
         bucket,
         storagePath,
         file,
@@ -117,6 +115,7 @@ export async function POST(
           projectId: project.id,
           bucket,
           storagePath,
+          storageProvider: "supabase",
           mimeType: file.type,
           documentType,
           fileName: file.name,

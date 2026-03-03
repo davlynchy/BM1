@@ -7,6 +7,7 @@ export type PendingScan = {
   fileName: string;
   fileSize: number;
   mimeType: string;
+  provider?: "supabase" | "r2";
   bucket: string;
   storagePath: string;
   uploadedAt: string;

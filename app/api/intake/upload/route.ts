@@ -5,18 +5,15 @@ import {
   getPendingScanCookieName,
   getPendingScanCookieOptions,
 } from "@/lib/intake/pending-scan";
+import {
+  ALLOWED_DOCUMENT_TYPE_SET,
+  LEGACY_INTAKE_FILE_SIZE_LIMIT,
+} from "@/lib/documents/upload-policy";
 import { getRequestIp } from "@/lib/api/request";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const MAX_FILE_SIZE = 30 * 1024 * 1024;
-const ALLOWED_TYPES = new Set([
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "text/plain",
-  "message/rfc822",
-]);
+const MAX_FILE_SIZE = LEGACY_INTAKE_FILE_SIZE_LIMIT;
 
 async function ensureContractsBucket() {
   const supabase = createAdminClient();
@@ -32,7 +29,7 @@ async function ensureContractsBucket() {
     const { error: createError } = await supabase.storage.createBucket("contracts", {
       public: false,
       fileSizeLimit: MAX_FILE_SIZE,
-      allowedMimeTypes: Array.from(ALLOWED_TYPES),
+      allowedMimeTypes: Array.from(ALLOWED_DOCUMENT_TYPE_SET),
     });
 
     if (createError) {
@@ -61,7 +58,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No file provided." }, { status: 400 });
     }
 
-    if (!ALLOWED_TYPES.has(file.type)) {
+    if (!ALLOWED_DOCUMENT_TYPE_SET.has(file.type as never)) {
       return NextResponse.json({ error: "Unsupported file type." }, { status: 400 });
     }
 
@@ -91,6 +88,7 @@ export async function POST(request: Request) {
       fileName: file.name,
       fileSize: file.size,
       mimeType: file.type,
+      provider: "supabase" as const,
       bucket: "contracts",
       storagePath,
       uploadedAt: new Date().toISOString(),

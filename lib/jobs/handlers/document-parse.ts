@@ -14,6 +14,7 @@ export async function handleDocumentParseJob(payload: DocumentJobPayload) {
   });
 
   const file = await downloadStoredFile({
+    provider: payload.storageProvider,
     bucket: payload.bucket,
     storagePath: payload.storagePath,
   });

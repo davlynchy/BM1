@@ -41,7 +41,7 @@ export default async function AppLayout({
       <div className="container grid gap-6 py-6 lg:grid-cols-[260px_1fr]">
         <aside className="panel h-fit p-4">
           <div className="border-b border-border pb-4">
-            <p className="font-[var(--font-heading)] text-2xl">Bidmetric</p>
+            <p className="font-heading text-2xl">Bidmetric</p>
             <p className="mt-2 text-sm text-muted">{workspace.company.name}</p>
             <Badge className="mt-3" variant="secondary">
               {workspace.profile?.email ?? "Workspace"}

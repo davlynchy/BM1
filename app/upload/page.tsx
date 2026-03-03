@@ -12,7 +12,7 @@ export default async function UploadPage({
     <main className="container py-12">
       <div className="mx-auto max-w-4xl space-y-6">
         <div className="space-y-3 text-center">
-          <h1 className="font-[var(--font-heading)] text-4xl">Run your first contract scan</h1>
+          <h1 className="font-heading text-4xl">Run your first contract scan</h1>
           <p className="text-muted">
             Upload a subcontract to generate a structured commercial risk summary.
           </p>
@@ -28,7 +28,7 @@ export default async function UploadPage({
                   {message}
                 </div>
               ) : null}
-              <IntakeUploader />
+              <IntakeUploader autoUpload />
               <p className="text-sm text-muted">
                 Free summary now. Full report and saved workspace after login.
               </p>
