@@ -45,6 +45,7 @@ export async function POST(
             companyId: String(project.company_id),
             projectId: String(project.id),
             userId: String(user.id),
+            threadType: "project_assistant",
           })
         : body.threadId && body.threadId.length
           ? await getValidatedAssistantThread({
@@ -52,11 +53,13 @@ export async function POST(
               companyId: String(project.company_id),
               projectId: String(project.id),
               userId: String(user.id),
+              threadType: "project_assistant",
             })
           : await getOrCreateAssistantThread({
               companyId: String(project.company_id),
               projectId: String(project.id),
               userId: String(user.id),
+              threadType: "project_assistant",
             });
 
     const userMessage = await insertAssistantMessage({

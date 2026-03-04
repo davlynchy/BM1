@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { ContractScanExtraction } from "@/types/scans";
+import type { ContractScanExtraction, QuickReviewResult, ScanFinding } from "@/types/scans";
 
 export async function updateContractScanStatus(params: {
   scanId: string;
@@ -22,6 +22,87 @@ export async function updateContractScanStatus(params: {
 
   if (error) {
     throw error;
+  }
+}
+
+export async function updateContractScanProgress(params: {
+  scanId: string;
+  status?: "queued" | "in_progress" | "completed" | "failed";
+  currentStage: string;
+  progressMessage: string;
+  summaryPatch?: Record<string, unknown>;
+}) {
+  const supabase = createAdminClient();
+  const { data: scan, error: loadError } = await supabase
+    .from("contract_scans")
+    .select("summary")
+    .eq("id", params.scanId)
+    .single();
+
+  if (loadError) {
+    throw loadError;
+  }
+
+  const currentSummary =
+    scan?.summary && typeof scan.summary === "object"
+      ? (scan.summary as Record<string, unknown>)
+      : {};
+  const stagesCompleted = Array.isArray(currentSummary.stagesCompleted)
+    ? Array.from(new Set([...(currentSummary.stagesCompleted as string[]), params.currentStage]))
+    : [params.currentStage];
+
+  const { error } = await supabase
+    .from("contract_scans")
+    .update({
+      status: params.status,
+      summary: {
+        ...currentSummary,
+        ...(params.summaryPatch ?? {}),
+        currentStage: params.currentStage,
+        lastProgressMessage: params.progressMessage,
+        stagesCompleted,
+      },
+    })
+    .eq("id", params.scanId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function replaceContractScanPreview(params: {
+  scanId: string;
+  companyId: string;
+  review: QuickReviewResult;
+}) {
+  const supabase = createAdminClient();
+
+  const { error: deleteFindingsError } = await supabase
+    .from("contract_scan_findings")
+    .delete()
+    .eq("scan_id", params.scanId);
+
+  if (deleteFindingsError) {
+    throw deleteFindingsError;
+  }
+
+  const { error: findingsError } = await supabase
+    .from("contract_scan_findings")
+    .insert(
+      params.review.findings.map((finding: ScanFinding) => ({
+        scan_id: params.scanId,
+        company_id: params.companyId,
+        severity: finding.severity,
+        title: finding.title,
+        summary: finding.summary,
+        implication: finding.implication,
+        recommended_action: finding.recommendedAction,
+        citation: finding.citation,
+      })),
+    );
+
+  if (findingsError) {
+    throw findingsError;
   }
 }
 

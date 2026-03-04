@@ -74,14 +74,21 @@ export async function retrieveProjectSources(params: {
   companyId: string;
   projectId: string;
   question: string;
+  documentIds?: string[];
 }) {
   const supabase = createAdminClient();
-  const { data: documents, error: documentsError } = await supabase
+  let documentsQuery = supabase
     .from("documents")
     .select("id, name")
     .eq("company_id", params.companyId)
     .eq("project_id", params.projectId)
     .eq("parse_status", "indexed");
+
+  if (params.documentIds?.length) {
+    documentsQuery = documentsQuery.in("id", params.documentIds);
+  }
+
+  const { data: documents, error: documentsError } = await documentsQuery;
 
   if (documentsError) {
     throw documentsError;

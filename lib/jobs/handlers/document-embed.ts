@@ -1,8 +1,5 @@
 import { embedTexts } from "@/lib/ai/embeddings";
 import { loadDocumentChunks, updateChunkEmbeddings, updateDocumentStatus } from "@/lib/jobs/documents";
-import { enqueueDocumentJob } from "@/lib/jobs/queue";
-import { resetScanForDocument } from "@/lib/jobs/scans";
-import { createAdminClient } from "@/lib/supabase/admin";
 import type { DocumentJobPayload } from "@/types/ingestion";
 
 export async function handleDocumentEmbedJob(payload: DocumentJobPayload) {
@@ -32,25 +29,4 @@ export async function handleDocumentEmbedJob(payload: DocumentJobPayload) {
     status: "indexed",
     indexedAt: new Date().toISOString(),
   });
-
-  if (payload.documentType === "contract") {
-    const supabase = createAdminClient();
-    const { data: scan } = await supabase
-      .from("contract_scans")
-      .select("id")
-      .eq("contract_document_id", payload.documentId)
-      .maybeSingle();
-
-    if (scan) {
-      await resetScanForDocument(payload.documentId);
-      await enqueueDocumentJob({
-        companyId: payload.companyId,
-        projectId: payload.projectId,
-        documentId: payload.documentId,
-        jobType: "scan.extract",
-        jobKey: `${payload.documentId}:scan.extract`,
-        payload,
-      });
-    }
-  }
 }

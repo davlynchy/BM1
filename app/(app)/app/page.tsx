@@ -127,7 +127,7 @@ export default async function AppDashboardPage({
               <Link href="/app/projects">Manage projects</Link>
             </Button>
             <Button asChild>
-              <Link href="/upload">New contract scan</Link>
+              <Link href="/app/vault">Open vault</Link>
             </Button>
           </div>
         </div>

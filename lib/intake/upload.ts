@@ -3,6 +3,7 @@ import {
   buildCanonicalStoragePath,
   getBucketForDocumentType,
 } from "@/lib/documents/storage";
+import { buildDocumentFingerprint } from "@/lib/documents/fingerprint";
 import {
   AUTHENTICATED_FILE_SIZE_LIMIT,
   MULTIPART_PART_SIZE,
@@ -149,13 +150,18 @@ async function ensureDocumentForUpload(params: {
 }) {
   const supabase = createAdminClient();
   const bucket = getBucketForDocumentType("contract", "r2");
+  const fingerprint = buildDocumentFingerprint({
+    fileName: params.session.file_name,
+    fileSize: params.session.file_size,
+    mimeType: params.session.mime_type,
+  });
   let documentId = params.session.document_id;
   let storagePath: string | null = null;
 
   if (documentId) {
     const { data: document, error } = await supabase
       .from("documents")
-      .select("id, storage_provider, storage_bucket, storage_path")
+      .select("id, storage_provider, storage_bucket, storage_path, document_fingerprint")
       .eq("id", documentId)
       .eq("project_id", params.projectId)
       .eq("company_id", params.companyId)
@@ -175,7 +181,7 @@ async function ensureDocumentForUpload(params: {
   if (!documentId) {
     const { data: document, error: documentError } = await supabase
       .from("documents")
-      .insert({
+    .insert({
         company_id: params.companyId,
         project_id: params.projectId,
         name: params.session.file_name,
@@ -186,6 +192,7 @@ async function ensureDocumentForUpload(params: {
         storage_path: "",
         mime_type: params.session.mime_type,
         file_size: params.session.file_size,
+        document_fingerprint: fingerprint,
         parse_status: "uploaded",
         uploaded_by: params.userId,
         upload_state: "created",
@@ -221,6 +228,7 @@ async function ensureDocumentForUpload(params: {
         storage_provider: "r2",
         storage_bucket: bucket,
         storage_path: storagePath,
+        document_fingerprint: fingerprint,
       })
       .eq("id", resolvedDocumentId);
 

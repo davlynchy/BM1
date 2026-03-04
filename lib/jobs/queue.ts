@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { DocumentJobPayload, JobType } from "@/types/ingestion";
+import type { AssistantJobPayload, DocumentJobPayload, JobType } from "@/types/ingestion";
 
 export async function enqueueDocumentJob(params: {
   companyId: string;
@@ -16,6 +16,35 @@ export async function enqueueDocumentJob(params: {
       company_id: params.companyId,
       project_id: params.projectId,
       document_id: params.documentId,
+      job_type: params.jobType,
+      status: "queued",
+      payload: params.payload,
+      job_key: params.jobKey ?? null,
+    })
+    .select("id, status")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+export async function enqueueAssistantJob(params: {
+  companyId: string;
+  projectId: string;
+  jobType: "assistant.quick_answer" | "assistant.deep_answer";
+  payload: AssistantJobPayload;
+  jobKey?: string;
+}) {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("jobs")
+    .insert({
+      company_id: params.companyId,
+      project_id: params.projectId,
+      document_id: null,
       job_type: params.jobType,
       status: "queued",
       payload: params.payload,

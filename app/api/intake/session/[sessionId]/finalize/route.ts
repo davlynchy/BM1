@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { shouldCreatePreviewScan } from "@/lib/billing/entitlements";
+import { buildDocumentFingerprint } from "@/lib/documents/fingerprint";
 import {
   getDefaultCompanyIdForUser,
   getOwnedIntakeSession,
@@ -9,6 +10,10 @@ import {
   updateIntakeSession,
 } from "@/lib/intake/session";
 import { enqueueDocumentJob } from "@/lib/jobs/queue";
+import { findReusableCompletedScan } from "@/lib/scans/duplicates";
+import { enforceContractScanQuota } from "@/lib/scans/limits";
+import { replaceContractScanOutputs } from "@/lib/scans/persist";
+import { ensureContractReviewThread, appendDeepReview } from "@/lib/scans/review-thread";
 import { createClient } from "@/lib/supabase/server";
 
 export async function POST(
@@ -144,12 +149,18 @@ export async function POST(
       return NextResponse.json({ error: "Upload the contract before continuing." }, { status: 400 });
     }
 
+    const fingerprint = buildDocumentFingerprint({
+      fileName: session.file_name,
+      fileSize: session.file_size,
+      mimeType: session.mime_type,
+    });
     const { error: documentUpdateError } = await supabase
       .from("documents")
       .update({
         parse_status: "queued",
         upload_state: "uploaded",
         upload_completed_at: new Date().toISOString(),
+        document_fingerprint: fingerprint,
       })
       .eq("id", documentId);
 
@@ -158,6 +169,83 @@ export async function POST(
     }
 
     const isFreePreview = await shouldCreatePreviewScan(companyId);
+    const reusableScan = await findReusableCompletedScan({
+      companyId,
+      projectId: projectId!,
+      fingerprint,
+      excludeDocumentId: documentId,
+    });
+
+    if (reusableScan) {
+      const { data: clonedScan, error: clonedScanError } = await supabase
+        .from("contract_scans")
+        .insert({
+          company_id: companyId,
+          project_id: projectId,
+          contract_document_id: documentId,
+          status: "completed",
+          is_free_preview: isFreePreview,
+          summary: reusableScan.extraction.summary,
+          created_by: user.id,
+          processing_error: null,
+          completed_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single();
+
+      if (clonedScanError || !clonedScan) {
+        return NextResponse.json(
+          { error: clonedScanError?.message ?? "Unable to reuse existing scan." },
+          { status: 400 },
+        );
+      }
+
+      await replaceContractScanOutputs({
+        scanId: clonedScan.id,
+        companyId,
+        extraction: reusableScan.extraction,
+      });
+
+      const reviewThread = await ensureContractReviewThread({
+        companyId,
+        projectId: projectId!,
+        scanId: clonedScan.id,
+        userId: user.id,
+        contractName: session.file_name,
+      });
+      await appendDeepReview({
+        threadId: String(reviewThread.id),
+        companyId,
+        scanId: clonedScan.id,
+        review: reusableScan.extraction,
+        citations: reusableScan.extraction.findings.slice(0, 4).map((finding, index) => ({
+          sourceId: `reused-${index}`,
+          documentId,
+          documentName: session.file_name,
+          pageNumber: finding.citation.page,
+          snippet: finding.citation.snippet,
+          sectionTitle: finding.citation.section,
+        })),
+      });
+
+      await markIntakeCompleted({
+        sessionId: session.id,
+        projectId: projectId!,
+        documentId: documentId!,
+        scanId: clonedScan.id,
+      });
+
+      const response = NextResponse.json({ scanId: clonedScan.id });
+      response.cookies.delete("bidmetric_intake_session");
+      return response;
+    }
+
+    await enforceContractScanQuota({
+      companyId,
+      userId: user.id,
+      reason: "finalize",
+    });
+
     const { data: existingScan } = await supabase
       .from("contract_scans")
       .select("id")
@@ -194,6 +282,14 @@ export async function POST(
         { status: 400 },
       );
     }
+
+    await ensureContractReviewThread({
+      companyId,
+      projectId: projectId!,
+      scanId: scan.id,
+      userId: user.id,
+      contractName: session.file_name,
+    });
 
     await enqueueDocumentJob({
       companyId,

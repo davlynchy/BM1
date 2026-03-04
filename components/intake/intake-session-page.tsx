@@ -43,6 +43,7 @@ export function IntakeSessionPage({
 }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isSubmittingRef = useRef(false);
   const hasProjects = projects.length > 0;
   const uploadCompleted = getSessionUploadState(session) === "uploaded" && Boolean(session.storage_path);
   const [mode, setMode] = useState<"create_new" | "existing">(
@@ -56,6 +57,45 @@ export function IntakeSessionPage({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [progress, setProgress] = useState(uploadCompleted ? 100 : 0);
   const [submitLabel, setSubmitLabel] = useState("Continue to scan");
+
+  async function uploadPartWithXhr(params: {
+    url: string;
+    chunk: Blob;
+    contentType: string;
+  }) {
+    return new Promise<string>((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      request.open("PUT", params.url);
+      request.responseType = "text";
+      request.setRequestHeader("Content-Type", params.contentType);
+
+      request.onload = () => {
+        if (request.status < 200 || request.status >= 300) {
+          reject(new Error(`Unable to upload contract chunk (${request.status}).`));
+          return;
+        }
+
+        const etag = request.getResponseHeader("etag") ?? request.getResponseHeader("ETag");
+
+        if (!etag) {
+          reject(new Error("Missing upload ETag for contract chunk."));
+          return;
+        }
+
+        resolve(etag);
+      };
+
+      request.onerror = () => {
+        reject(new Error("Direct upload failed before the contract reached storage."));
+      };
+
+      request.onabort = () => {
+        reject(new Error("Contract upload was interrupted."));
+      };
+
+      request.send(params.chunk);
+    });
+  }
 
   useEffect(() => {
     if (uploadCompleted) {
@@ -137,22 +177,11 @@ export function IntakeSessionPage({
       const start = (part.partNumber - 1) * descriptor.partSize;
       const end = Math.min(start + descriptor.partSize, fileToUpload.size);
       const chunk = fileToUpload.slice(start, end);
-      const uploadResponse = await fetch(part.url, {
-        method: "PUT",
-        headers: {
-          "Content-Type": fileToUpload.type || "application/octet-stream",
-        },
-        body: chunk,
+      const etag = await uploadPartWithXhr({
+        url: part.url,
+        chunk,
+        contentType: fileToUpload.type || "application/octet-stream",
       });
-
-      if (!uploadResponse.ok) {
-        throw new Error(`Unable to upload ${fileToUpload.name}.`);
-      }
-
-      const etag = uploadResponse.headers.get("etag") ?? uploadResponse.headers.get("ETag");
-      if (!etag) {
-        throw new Error(`Missing upload ETag for ${fileToUpload.name}.`);
-      }
 
       completedParts.push({
         partNumber: part.partNumber,
@@ -182,10 +211,11 @@ export function IntakeSessionPage({
   }
 
   async function handleContinue() {
-    if (isSubmitting) {
+    if (isSubmitting || isSubmittingRef.current) {
       return;
     }
 
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     setError(null);
 
@@ -249,6 +279,7 @@ export function IntakeSessionPage({
     } finally {
       setSubmitLabel("Continue to scan");
       setIsSubmitting(false);
+      isSubmittingRef.current = false;
     }
   }
 

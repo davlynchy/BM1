@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Route } from "next";
 import { redirect } from "next/navigation";
-import { Building2, FolderOpen, LayoutDashboard, Settings } from "lucide-react";
+import { Bot, FolderOpen, LayoutDashboard, Settings } from "lucide-react";
 
 import { signOutAction } from "@/app/(auth)/actions";
 import { Badge } from "@/components/ui/badge";
@@ -11,8 +11,9 @@ import { createClient } from "@/lib/supabase/server";
 
 const navItems = [
   { href: "/app", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/app/assistant", label: "Assistant", icon: Bot },
+  { href: "/app/vault", label: "Vault", icon: FolderOpen },
   { href: "/app/projects", label: "Projects", icon: FolderOpen },
-  { href: "/app/company", label: "Company Vault", icon: Building2 },
   { href: "/app/settings", label: "Settings", icon: Settings },
 ] satisfies Array<{ href: Route; label: string; icon: typeof LayoutDashboard }>;
 

@@ -128,8 +128,8 @@ export async function updateCorrespondenceAnalysis(params: {
     .update({
       analysis_status: "completed",
       processing_error: null,
-      ai_summary: params.analysis.summary,
-      draft_reply: params.analysis.draftReply,
+      ai_summary: params.analysis.situationSummary,
+      draft_reply: params.analysis.draftReplyFirm,
       action_required: params.analysis.actionRequired,
       analyzed_at: new Date().toISOString(),
       metadata: {
@@ -137,6 +137,16 @@ export async function updateCorrespondenceAnalysis(params: {
         priority: params.analysis.priority,
         recommendedTitle: params.analysis.recommendedTitle,
         recommendedAction: params.analysis.recommendedAction,
+        summary: params.analysis.summary,
+        commercialRisk: params.analysis.commercialRisk,
+        recommendedPosition: params.analysis.recommendedPosition,
+        keyPoints: params.analysis.keyPoints,
+        requestedActions: params.analysis.requestedActions,
+        deadlineSignals: params.analysis.deadlineSignals,
+        contractReferences: params.analysis.contractReferences,
+        draftReplyShort: params.analysis.draftReplyShort,
+        draftReplyFirm: params.analysis.draftReplyFirm,
+        draftReplyCollaborative: params.analysis.draftReplyCollaborative,
         sourceSignals: params.analysis.sourceSignals,
       },
     })

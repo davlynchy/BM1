@@ -1,5 +1,6 @@
 import { loadDocumentPages, replaceDocumentChunks, updateDocumentStatus } from "@/lib/jobs/documents";
 import { enqueueDocumentJob } from "@/lib/jobs/queue";
+import { resetScanForDocument } from "@/lib/jobs/scans";
 import { createDocumentChunks } from "@/lib/documents/chunking";
 import type { DocumentJobPayload } from "@/types/ingestion";
 
@@ -41,6 +42,22 @@ export async function handleDocumentChunkJob(payload: DocumentJobPayload) {
     status: "embedding",
     chunkCount: chunks.length,
   });
+
+  if (payload.documentType === "contract") {
+    await resetScanForDocument(payload.documentId);
+    await enqueueDocumentJob({
+      companyId: payload.companyId,
+      projectId: payload.projectId,
+      documentId: payload.documentId,
+      jobType: "scan.quick_extract",
+      jobKey: `${payload.documentId}:scan.quick_extract`,
+      payload: {
+        ...payload,
+        pageCount: normalizedPages.length,
+        chunkCount: chunks.length,
+      },
+    });
+  }
 
   await enqueueDocumentJob({
     companyId: payload.companyId,

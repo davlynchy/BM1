@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 
 import { TradeImpactCalculator } from "@/components/marketing/trade-impact-calculator";
-import { IntakeUploader } from "@/components/upload/intake-uploader";
 import { Button } from "@/components/ui/button";
 
 const featureCards = [
@@ -224,8 +223,19 @@ export default function LandingPage() {
               draft correspondence, and keep your commercial team ahead.
             </p>
 
-            <div className="mt-10 w-full max-w-[540px]" id="hero-upload">
-              <IntakeUploader autoUpload compact variant="marketing" />
+            <div className="mt-10 w-full max-w-[540px] rounded-3xl border border-[#dfe4d8] bg-white px-6 py-5 text-left shadow-[0_16px_36px_rgba(25,39,32,0.08)]" id="hero-upload">
+              <p className="text-sm uppercase tracking-[0.16em] text-[#6f7d72]">Start in your workspace</p>
+              <p className="mt-3 text-base leading-7 text-[#5e685f]">
+                Sign in to open your project vault, upload contracts, and run assistant-led reviews.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Button asChild className="rounded-full bg-[#234838] hover:bg-[#1c3a2d]" size="sm">
+                  <Link href="/login?next=%2Fapp%2Fvault">Log In</Link>
+                </Button>
+                <Button asChild className="rounded-full border-[#d9ddd4] bg-white text-[#34443c] hover:bg-[#f5f6f1]" size="sm" variant="secondary">
+                  <Link href="/signup?next=%2Fapp%2Fvault">Create Account</Link>
+                </Button>
+              </div>
             </div>
 
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">

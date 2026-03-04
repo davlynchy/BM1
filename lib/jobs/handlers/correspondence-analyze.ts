@@ -1,4 +1,5 @@
 import { analyzeCorrespondence } from "@/lib/correspondence/analyze";
+import { loadCorrespondenceProjectContext } from "@/lib/correspondence/context";
 import {
   failCorrespondenceAnalysis,
   loadCorrespondenceByDocument,
@@ -22,6 +23,9 @@ export async function handleCorrespondenceAnalyzeJob(payload: DocumentJobPayload
       subject: String(correspondence.subject ?? ""),
       sender: String(correspondence.sender ?? ""),
       bodyText: String(correspondence.body_text ?? ""),
+      projectContext: await loadCorrespondenceProjectContext(
+        correspondence.project_id ? String(correspondence.project_id) : null,
+      ),
     });
 
     await updateCorrespondenceAnalysis({

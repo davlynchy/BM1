@@ -14,8 +14,11 @@ export const JOB_TYPES = [
   "document.parse",
   "document.chunk",
   "document.embed",
-  "scan.extract",
+  "scan.quick_extract",
+  "scan.deep_extract",
   "correspondence.analyze",
+  "assistant.quick_answer",
+  "assistant.deep_answer",
 ] as const;
 
 export type JobType = (typeof JOB_TYPES)[number];
@@ -61,6 +64,19 @@ export type DocumentJobPayload = {
   pageCount?: number;
   chunkCount?: number;
 };
+
+export type AssistantJobPayload = {
+  runId: string;
+  threadId: string;
+  companyId: string;
+  projectId: string;
+  userId: string;
+  question: string;
+  mode: "auto" | "draft" | "answer";
+  threadType: "project_assistant" | "contract_review";
+};
+
+export type JobPayload = DocumentJobPayload | AssistantJobPayload;
 
 export type ProjectDocumentListItem = {
   id: string;

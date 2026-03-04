@@ -2,6 +2,14 @@ export type ScanSummary = {
   executiveSummary: string;
   topThemes: string[];
   confidence: "low" | "medium" | "high";
+  negotiationPoints?: string[];
+  priorityActions?: string[];
+  clausesNeedingLegalReview?: string[];
+  currentStage?: string;
+  stagesCompleted?: string[];
+  lastProgressMessage?: string;
+  quickReviewCompletedAt?: string;
+  deepReviewCompletedAt?: string;
 };
 
 export type ScanCitation = {
@@ -33,4 +41,9 @@ export type ContractScanExtraction = {
   summary: ScanSummary;
   findings: ScanFinding[];
   obligations: ContractObligation[];
+};
+
+export type QuickReviewResult = {
+  summary: ScanSummary;
+  findings: ScanFinding[];
 };

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { enqueueDocumentJob } from "@/lib/jobs/queue";
+import { enforceContractScanQuota } from "@/lib/scans/limits";
 import { createClient } from "@/lib/supabase/server";
 
 export async function POST(
@@ -26,6 +27,14 @@ export async function POST(
 
     if (error || !document) {
       return NextResponse.json({ error: "Document not found." }, { status: 404 });
+    }
+
+    if (document.document_type === "contract") {
+      await enforceContractScanQuota({
+        companyId: document.company_id,
+        userId: user.id,
+        reason: "retry",
+      });
     }
 
     const { error: updateError } = await supabase

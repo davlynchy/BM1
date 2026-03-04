@@ -4,6 +4,9 @@ import { upsertProjectCorrespondenceFromEmail } from "@/lib/correspondence/store
 import { downloadStoredFile } from "@/lib/documents/storage";
 import { replaceDocumentPages, updateDocumentStatus } from "@/lib/jobs/documents";
 import { enqueueDocumentJob } from "@/lib/jobs/queue";
+import { updateContractScanProgress } from "@/lib/scans/persist";
+import { appendReviewProgress } from "@/lib/scans/review-thread";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { DocumentJobPayload } from "@/types/ingestion";
 
 export async function handleDocumentParseJob(payload: DocumentJobPayload) {
@@ -56,6 +59,42 @@ export async function handleDocumentParseJob(payload: DocumentJobPayload) {
     companyId: payload.companyId,
     pages: parsed.pages,
   });
+
+  if (payload.documentType === "contract") {
+    const supabase = createAdminClient();
+    const { data: scan } = await supabase
+      .from("contract_scans")
+      .select("id")
+      .eq("contract_document_id", payload.documentId)
+      .maybeSingle();
+
+    if (scan?.id) {
+      await updateContractScanProgress({
+        scanId: String(scan.id),
+        status: "in_progress",
+        currentStage: "text_extracted",
+        progressMessage: "Contract text extracted and ready for clause grouping.",
+      });
+
+      const { data: thread } = await supabase
+        .from("assistant_threads")
+        .select("id")
+        .eq("scan_id", scan.id)
+        .eq("thread_type", "contract_review")
+        .maybeSingle();
+
+      if (thread?.id) {
+        await appendReviewProgress({
+          threadId: String(thread.id),
+          companyId: payload.companyId,
+          scanId: String(scan.id),
+          stage: "text_extracted",
+          content:
+            "I have extracted the contract text. I'm grouping the clauses and identifying the commercial pressure points now.",
+        });
+      }
+    }
+  }
 
   await updateDocumentStatus({
     documentId: payload.documentId,
