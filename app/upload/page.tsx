@@ -30,7 +30,7 @@ export default async function UploadPage({
               ) : null}
               <IntakeUploader autoUpload />
               <p className="text-sm text-muted">
-                Free summary now. Full report and saved workspace after login.
+                Continue to save this contract to a project and run the scan.
               </p>
             </CardContent>
           </Card>

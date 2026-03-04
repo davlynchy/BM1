@@ -49,6 +49,7 @@ export async function ensureUserWorkspace(preferredCompanyName?: string) {
 
   const baseSlug = slugifyCompanyName(companyName) || "company";
   let companyId: string | null = null;
+  let lastCompanyError: string | null = null;
 
   for (let index = 0; index < 5; index += 1) {
     const candidateSlug = index === 0 ? baseSlug : `${baseSlug}-${index + 1}`;
@@ -66,10 +67,12 @@ export async function ensureUserWorkspace(preferredCompanyName?: string) {
       companyId = company.id;
       break;
     }
+
+    lastCompanyError = companyError?.message ?? "Company row was not returned after insert.";
   }
 
   if (!companyId) {
-    throw new Error("Unable to create company workspace.");
+    throw new Error(`Unable to create company workspace. ${lastCompanyError ?? ""}`.trim());
   }
 
   const { error: memberError } = await supabase.from("company_members").insert({

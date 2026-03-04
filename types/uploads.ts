@@ -39,3 +39,7 @@ export type UploadDescriptor = {
   partCount: number;
 };
 
+export type CompletedUploadPart = {
+  partNumber: number;
+  etag: string;
+};

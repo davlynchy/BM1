@@ -3,20 +3,33 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { getPublicIntakeSessionSummary } from "@/lib/intake/session";
+
+function formatSize(bytes: number) {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ message?: string; next?: string }>;
+  searchParams: Promise<{ message?: string; next?: string; intakeSessionId?: string }>;
 }) {
-  const { message, next } = await searchParams;
-  const signupHref = next ? `/signup?next=${encodeURIComponent(next)}` : "/signup";
+  const { message, next, intakeSessionId } = await searchParams;
+  const intakeSession = intakeSessionId ? await getPublicIntakeSessionSummary(intakeSessionId) : null;
+  const params = new URLSearchParams();
+  if (next) {
+    params.set("next", next);
+  }
+  if (intakeSessionId) {
+    params.set("intakeSessionId", intakeSessionId);
+  }
+  const signupHref = params.size ? `/signup?${params.toString()}` : "/signup";
 
   return (
     <main className="container flex min-h-screen items-center justify-center py-12">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Login</CardTitle>
+          <CardTitle>{intakeSession ? "Log in to continue" : "Login"}</CardTitle>
         </CardHeader>
         <CardContent>
           <form action={signInAction} className="space-y-5">
@@ -25,7 +38,13 @@ export default async function LoginPage({
                 {message}
               </div>
             ) : null}
+            {intakeSession ? (
+              <div className="rounded-xl border border-border bg-bg px-3 py-2 text-sm text-muted">
+                Continue with <span className="font-medium text-text">{intakeSession.file_name}</span> ({formatSize(intakeSession.file_size)}).
+              </div>
+            ) : null}
             <input name="next" type="hidden" value={next ?? ""} />
+            <input name="intakeSessionId" type="hidden" value={intakeSessionId ?? ""} />
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input id="email" name="email" type="email" placeholder="you@company.com" />
@@ -35,7 +54,7 @@ export default async function LoginPage({
               <Input id="password" name="password" type="password" placeholder="Password" />
             </div>
             <Button className="w-full" type="submit">
-              Continue
+              {intakeSession ? "Log in to continue" : "Continue"}
             </Button>
             <p className="text-sm text-muted">
               Need an account?{" "}

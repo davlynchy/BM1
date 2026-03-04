@@ -4,14 +4,15 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { ensureUserWorkspace } from "@/lib/auth/workspace";
-import { getEnv } from "@/lib/env";
-import { readPendingScanCookie } from "@/lib/intake/pending-scan";
+import { attachIntakeSessionToWorkspace, readIntakeSessionCookie } from "@/lib/intake/session";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 const signInSchema = z.object({
   email: z.email(),
   password: z.string().min(8),
   next: z.string().optional(),
+  intakeSessionId: z.string().uuid().optional(),
 });
 
 const signUpSchema = z.object({
@@ -19,25 +20,36 @@ const signUpSchema = z.object({
   email: z.email(),
   password: z.string().min(8),
   next: z.string().optional(),
+  intakeSessionId: z.string().uuid().optional(),
 });
 
 function getString(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
 
-function getSafeRedirectPath(next: string | undefined, hasPendingScan: boolean) {
+function getSafeRedirectPath(next: string | undefined, intakeSessionId?: string) {
+  if (intakeSessionId) {
+    return `/app/intake/${intakeSessionId}`;
+  }
+
   if (next && next.startsWith("/") && !next.startsWith("//")) {
     return next;
   }
 
-  return hasPendingScan ? "/app/intake" : "/app";
+  return "/app";
+}
+
+async function resolveIntakeSessionId(formData: FormData, key: string) {
+  return getString(formData, key) || (await readIntakeSessionCookie()) || undefined;
 }
 
 export async function signInAction(formData: FormData) {
+  const intakeSessionId = await resolveIntakeSessionId(formData, "intakeSessionId");
   const parsed = signInSchema.safeParse({
     email: getString(formData, "email"),
     password: getString(formData, "password"),
     next: getString(formData, "next") || undefined,
+    intakeSessionId,
   });
 
   if (!parsed.success) {
@@ -45,59 +57,78 @@ export async function signInAction(formData: FormData) {
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({
+  const { data, error } = await supabase.auth.signInWithPassword({
     email: parsed.data.email,
     password: parsed.data.password,
   });
 
-  if (error) {
-    redirect(`/login?message=${encodeURIComponent(error.message)}`);
+  if (error || !data.user) {
+    redirect(`/login?message=${encodeURIComponent(error?.message ?? "Unable to create session.")}`);
   }
 
-  await ensureUserWorkspace();
+  const companyId = await ensureUserWorkspace();
 
-  const pendingScan = await readPendingScanCookie();
-  redirect(getSafeRedirectPath(parsed.data.next, Boolean(pendingScan)) as never);
+  if (parsed.data.intakeSessionId) {
+    await attachIntakeSessionToWorkspace({
+      sessionId: parsed.data.intakeSessionId,
+      userId: data.user.id,
+      companyId,
+    });
+  }
+
+  redirect(getSafeRedirectPath(parsed.data.next, parsed.data.intakeSessionId) as never);
 }
 
 export async function signUpAction(formData: FormData) {
+  const intakeSessionId = await resolveIntakeSessionId(formData, "intakeSessionId");
   const parsed = signUpSchema.safeParse({
     companyName: getString(formData, "companyName"),
     email: getString(formData, "email"),
     password: getString(formData, "password"),
     next: getString(formData, "next") || undefined,
+    intakeSessionId,
   });
 
   if (!parsed.success) {
     redirect("/signup?message=Enter+valid+account+details.");
   }
 
-  const supabase = await createClient();
-  const env = getEnv();
-  const { data, error } = await supabase.auth.signUp({
+  const admin = createAdminClient();
+  const { error: createUserError } = await admin.auth.admin.createUser({
     email: parsed.data.email,
     password: parsed.data.password,
-    options: {
-      emailRedirectTo: `${env.NEXT_PUBLIC_APP_URL}/auth/callback`,
-      data: {
-        company_name: parsed.data.companyName,
-        full_name: parsed.data.companyName,
-      },
+    email_confirm: true,
+    user_metadata: {
+      company_name: parsed.data.companyName,
+      full_name: parsed.data.companyName,
     },
   });
 
-  if (error) {
-    redirect(`/signup?message=${encodeURIComponent(error.message)}`);
+  if (createUserError) {
+    redirect(`/signup?message=${encodeURIComponent(createUserError.message)}`);
   }
 
-  if (data.session) {
-    await ensureUserWorkspace(parsed.data.companyName);
-    const pendingScan = await readPendingScanCookie();
-    redirect(getSafeRedirectPath(parsed.data.next, Boolean(pendingScan)) as never);
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: parsed.data.email,
+    password: parsed.data.password,
+  });
+
+  if (error || !data.user) {
+    redirect(`/signup?message=${encodeURIComponent(error?.message ?? "Unable to create session.")}`);
   }
 
-  const next = encodeURIComponent(parsed.data.next || "/app");
-  redirect(`/login?message=Check+your+email+to+complete+sign+up.&next=${next}`);
+  const companyId = await ensureUserWorkspace(parsed.data.companyName);
+
+  if (parsed.data.intakeSessionId) {
+    await attachIntakeSessionToWorkspace({
+      sessionId: parsed.data.intakeSessionId,
+      userId: data.user.id,
+      companyId,
+    });
+  }
+
+  redirect(getSafeRedirectPath(parsed.data.next, parsed.data.intakeSessionId) as never);
 }
 
 export async function signOutAction() {

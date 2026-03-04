@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 
 import { ensureUserWorkspace } from "@/lib/auth/workspace";
-import { readPendingScanCookie } from "@/lib/intake/pending-scan";
+import {
+  attachIntakeSessionToWorkspace,
+  readIntakeSessionCookie,
+} from "@/lib/intake/session";
 import { createClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
+  const intakeSessionId = requestUrl.searchParams.get("intakeSessionId");
 
   if (!code) {
     return NextResponse.redirect(new URL("/login?message=Missing+auth+code.", request.url));
@@ -21,8 +25,21 @@ export async function GET(request: Request) {
     );
   }
 
-  await ensureUserWorkspace();
-  const pendingScan = await readPendingScanCookie();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const companyId = await ensureUserWorkspace();
+  const resolvedSessionId = intakeSessionId ?? (await readIntakeSessionCookie());
 
-  return NextResponse.redirect(new URL(pendingScan ? "/app/intake" : "/app", request.url));
+  if (resolvedSessionId && user) {
+    await attachIntakeSessionToWorkspace({
+      sessionId: resolvedSessionId,
+      userId: user.id,
+      companyId,
+    });
+
+    return NextResponse.redirect(new URL(`/app/intake/${resolvedSessionId}`, request.url));
+  }
+
+  return NextResponse.redirect(new URL("/app", request.url));
 }

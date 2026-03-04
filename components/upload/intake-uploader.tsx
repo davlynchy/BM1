@@ -6,7 +6,8 @@ import { LoaderCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { UploadDropzone } from "@/components/ui/upload-dropzone";
-import { ANONYMOUS_UPLOAD_THRESHOLD } from "@/lib/documents/upload-policy";
+import { AUTHENTICATED_FILE_SIZE_LIMIT } from "@/lib/documents/upload-policy";
+import { saveIntakeFile } from "@/lib/intake/browser-file-cache";
 
 const ALLOWED_TYPES = [
   "application/pdf",
@@ -37,65 +38,52 @@ export function IntakeUploader({
       return;
     }
 
+    if (
+      targetFiles.length !== 1 ||
+      Boolean((targetFiles[0] as File & { webkitRelativePath?: string }).webkitRelativePath)
+    ) {
+      setError("Public intake supports one contract at a time. Sign in first to upload folders or multiple files.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const manifest = targetFiles.map((targetFile) => ({
-        name: targetFile.name,
-        size: targetFile.size,
-        type: targetFile.type,
-        relativePath:
-          ((targetFile as File & { webkitRelativePath?: string }).webkitRelativePath || "")
-            .replace(/\\/g, "/") || null,
-      }));
-      const startResponse = await fetch("/api/intake/large-upload/start", {
+      const file = targetFiles[0];
+      const createResponse = await fetch("/api/intake/session", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          files: manifest,
+          file: {
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            relativePath:
+              ((file as File & { webkitRelativePath?: string }).webkitRelativePath || "").replace(/\\/g, "/") || null,
+          },
         }),
       });
-      const startPayload = (await startResponse.json().catch(() => ({}))) as {
-        error?: string;
-        mode?: "anonymous" | "requires_auth";
-        redirectTo?: string | null;
-      };
-
-      if (!startResponse.ok || !startPayload.mode) {
-        setLoading(false);
-        setError(startPayload.error ?? "Unable to start upload.");
-        return;
-      }
-
-      if (startPayload.mode === "requires_auth") {
-        sessionStorage.setItem("bidmetric_intake_manifest", JSON.stringify(manifest));
-        window.location.href = startPayload.redirectTo ?? "/signup?next=%2Fupload";
-        return;
-      }
-
-      const formData = new FormData();
-      formData.append("file", targetFiles[0]);
-
-      const response = await fetch("/api/intake/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      const payload = (await response.json().catch(() => ({}))) as {
+      const createPayload = (await createResponse.json().catch(() => ({}))) as {
         error?: string;
         redirectTo?: string;
+        sessionId?: string;
       };
 
-      if (!response.ok || !payload.redirectTo) {
+      if (!createResponse.ok || !createPayload.redirectTo || !createPayload.sessionId) {
         setLoading(false);
-        setError(payload.error ?? "Upload failed.");
+        setError(createPayload.error ?? "Unable to start upload.");
         return;
       }
 
-      window.location.href = payload.redirectTo;
+      try {
+        await saveIntakeFile(createPayload.sessionId, file);
+      } catch {
+        // Browser storage is best-effort. If it fails, the intake page will ask for reattachment.
+      }
+      window.location.href = createPayload.redirectTo;
     } catch {
       setLoading(false);
       setError("Upload failed. Check the dev server and try again.");
@@ -103,23 +91,16 @@ export function IntakeUploader({
   }, [files]);
 
   const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
-  const requiresAuth =
-    files.length > 1 ||
-    files.some(
-      (file) =>
-        file.size > ANONYMOUS_UPLOAD_THRESHOLD ||
-        Boolean((file as File & { webkitRelativePath?: string }).webkitRelativePath),
-    );
+  const maxSizeInGb = Math.floor(AUTHENTICATED_FILE_SIZE_LIMIT / (1024 * 1024 * 1024));
 
   return (
     <div className="space-y-5">
       <UploadDropzone
         acceptedTypes={ALLOWED_TYPES}
-        allowFolders
+        allowFolders={false}
         className={compact ? "min-h-52" : undefined}
         fileButtonLabel="Choose contract"
-        folderButtonLabel="Choose folder"
-        multiple
+        multiple={false}
         onFilesSelect={(nextFiles) => {
           setFiles(nextFiles);
           setError(null);
@@ -132,10 +113,10 @@ export function IntakeUploader({
           variant === "marketing"
             ? "PDF, Word or Excel"
             : autoUpload
-              ? "Small single-file uploads can start immediately. Large files and folders require an account."
+              ? "Choose one contract to continue into login or signup, then assign it to a project."
               : undefined
         }
-        title={variant === "marketing" ? "Drop your contract here" : autoUpload ? "Drop your contract to start instantly" : undefined}
+        title={variant === "marketing" ? "Drop your contract here" : autoUpload ? "Drop your contract to continue" : undefined}
         variant={variant === "marketing" ? "marketing" : "default"}
       />
       {files.length ? (
@@ -147,11 +128,9 @@ export function IntakeUploader({
           }
         >
           {loading ? "Preparing upload" : "Selected"}: {files.length} file{files.length === 1 ? "" : "s"} ({(totalBytes / (1024 * 1024)).toFixed(1)} MB)
-          {requiresAuth ? (
-            <p className="mt-2">
-              Files over 25MB, multiple files, and folder uploads require login before transfer begins.
-            </p>
-          ) : null}
+          <p className="mt-2">
+            Public intake supports one contract at a time, up to {maxSizeInGb}GB. Upload continues after login or signup.
+          </p>
         </div>
       ) : null}
       {error ? (
@@ -176,8 +155,8 @@ export function IntakeUploader({
           {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
           <span>
             {variant === "marketing"
-              ? "Free summary for small files now. Large files and folders continue after login."
-              : "Free summary for small files now. Large files and folders continue after login."}
+              ? "Continue to save this contract to a project and run the scan."
+              : "Continue to save this contract to a project and run the scan."}
           </span>
         </div>
       ) : (

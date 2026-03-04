@@ -18,21 +18,25 @@ const BUCKET_CONFIG: Array<{
 }> = [
   {
     name: SUPABASE_BUCKETS.contract,
-    fileSizeLimit: "200MiB",
+    fileSizeLimit: "200MB",
   },
   {
     name: SUPABASE_BUCKETS.project_document,
-    fileSizeLimit: "200MiB",
+    fileSizeLimit: "200MB",
   },
   {
     name: SUPABASE_BUCKETS.email,
-    fileSizeLimit: "50MiB",
+    fileSizeLimit: "50MB",
   },
   {
     name: SUPABASE_BUCKETS.generated,
-    fileSizeLimit: "100MiB",
+    fileSizeLimit: "100MB",
   },
 ];
+
+function getBucketConfig(bucketName: string) {
+  return BUCKET_CONFIG.find((config) => config.name === bucketName) ?? null;
+}
 
 export function sanitizeFilename(fileName: string) {
   const ext = path.extname(fileName);
@@ -105,9 +109,9 @@ export async function ensurePrivateBuckets() {
   }
 
   for (const config of BUCKET_CONFIG) {
-    const exists = buckets.some((bucket) => bucket.name === config.name);
+    const existingBucket = buckets.find((bucket) => bucket.name === config.name);
 
-    if (!exists) {
+    if (!existingBucket) {
       const { error: createError } = await supabase.storage.createBucket(config.name, {
         public: false,
         fileSizeLimit: config.fileSizeLimit,
@@ -117,7 +121,39 @@ export async function ensurePrivateBuckets() {
       if (createError) {
         throw createError;
       }
+
+      continue;
     }
+  }
+}
+
+export async function ensurePrivateBucket(bucketName: string) {
+  const config = getBucketConfig(bucketName);
+
+  if (!config) {
+    throw new Error(`Unknown storage bucket configuration for ${bucketName}.`);
+  }
+
+  const supabase = createAdminClient();
+  const { data: buckets, error } = await supabase.storage.listBuckets();
+
+  if (error) {
+    throw error;
+  }
+
+  const existingBucket = buckets.find((bucket) => bucket.name === bucketName);
+  if (existingBucket) {
+    return;
+  }
+
+  const { error: createError } = await supabase.storage.createBucket(config.name, {
+    public: false,
+    fileSizeLimit: config.fileSizeLimit,
+    allowedMimeTypes: config.allowedMimeTypes,
+  });
+
+  if (createError) {
+    throw createError;
   }
 }
 
