@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+import { ScanAutoRefresh } from "@/components/scan/scan-auto-refresh";
 import { BillingActions } from "@/components/settings/billing-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -89,6 +90,7 @@ export default async function ScanPage({
                 {document?.name ?? "Uploaded contract"} is being prepared as commercial intelligence.
               </p>
             </div>
+            <ScanAutoRefresh enabled={isProcessing && !isFailed} />
           </div>
           <div className="flex gap-3">
             <Button asChild variant="secondary">
