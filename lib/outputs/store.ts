@@ -1,6 +1,15 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ProjectOutputRecord, ProjectOutputType, ProjectOutputVersion } from "@/types/outputs";
 
+function isMissingRelationError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const code = "code" in error ? String(error.code ?? "") : "";
+  return code === "PGRST205" || code === "PGRST204" || code === "42P01";
+}
+
 function mapOutput(row: Record<string, unknown>): ProjectOutputRecord {
   return {
     id: String(row.id),
@@ -28,6 +37,9 @@ export async function listProjectOutputs(projectId: string) {
     .order("updated_at", { ascending: false });
 
   if (error) {
+    if (isMissingRelationError(error)) {
+      return [];
+    }
     throw error;
   }
 
@@ -44,6 +56,9 @@ export async function getProjectOutput(outputId: string, projectId: string) {
     .maybeSingle();
 
   if (error) {
+    if (isMissingRelationError(error)) {
+      return null;
+    }
     throw error;
   }
 
@@ -59,6 +74,9 @@ export async function listProjectOutputVersions(outputId: string) {
     .order("version", { ascending: false });
 
   if (error) {
+    if (isMissingRelationError(error)) {
+      return [];
+    }
     throw error;
   }
 
@@ -106,6 +124,9 @@ export async function createProjectOutput(params: {
     .single();
 
   if (error || !data) {
+    if (isMissingRelationError(error)) {
+      throw new Error("Outputs are not available yet. Run the latest Supabase migrations.");
+    }
     throw error ?? new Error("Unable to create project output.");
   }
 
@@ -139,6 +160,9 @@ export async function updateProjectOutput(params: {
     .single();
 
   if (currentError || !current) {
+    if (isMissingRelationError(currentError)) {
+      throw new Error("Outputs are not available yet. Run the latest Supabase migrations.");
+    }
     throw currentError ?? new Error("Project output not found.");
   }
 
@@ -160,6 +184,9 @@ export async function updateProjectOutput(params: {
     .single();
 
   if (error || !data) {
+    if (isMissingRelationError(error)) {
+      throw new Error("Outputs are not available yet. Run the latest Supabase migrations.");
+    }
     throw error ?? new Error("Unable to update project output.");
   }
 
@@ -200,6 +227,9 @@ async function createProjectOutputVersion(params: {
   });
 
   if (error) {
+    if (isMissingRelationError(error)) {
+      throw new Error("Output versions are not available yet. Run the latest Supabase migrations.");
+    }
     throw error;
   }
 }

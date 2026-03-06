@@ -11,10 +11,10 @@ export default async function UploadPage({
 
   const supabase = await createClient();
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
 
-  if (!user) {
+  if (!session) {
     redirect("/login?next=%2Fapp%2Fvault&message=Log+in+to+open+your+vault+and+upload+documents.");
   }
 

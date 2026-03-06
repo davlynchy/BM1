@@ -1,4 +1,6 @@
 import { spawn, ChildProcess } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 
 type ManagedProcess = {
   name: string;
@@ -7,6 +9,36 @@ type ManagedProcess = {
 
 const children: ManagedProcess[] = [];
 let shuttingDown = false;
+
+function loadLocalEnvFiles() {
+  const envFiles = [".env.local", ".env"];
+
+  for (const fileName of envFiles) {
+    const filePath = path.join(process.cwd(), fileName);
+    if (!fs.existsSync(filePath)) {
+      continue;
+    }
+
+    const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/);
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) {
+        continue;
+      }
+
+      const separator = line.indexOf("=");
+      if (separator === -1) {
+        continue;
+      }
+
+      const key = line.slice(0, separator).trim();
+      const value = line.slice(separator + 1).trim();
+      if (key && !(key in process.env)) {
+        process.env[key] = value;
+      }
+    }
+  }
+}
 
 function spawnProcess(name: string, command: string, args: string[]) {
   const child = spawn(command, args, {
@@ -62,5 +94,6 @@ process.on("SIGTERM", () => {
   process.exit(0);
 });
 
+loadLocalEnvFiles();
 spawnProcess("web", "npm", ["run", "dev:web"]);
 spawnProcess("worker", "npm", ["run", "worker:documents"]);

@@ -5,7 +5,7 @@ import {
   attachIntakeSessionToWorkspace,
   readIntakeSessionCookie,
 } from "@/lib/intake/session";
-import { createClient } from "@/lib/supabase/server";
+import { createMutableServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/login?message=Missing+auth+code.", request.url));
   }
 
-  const supabase = await createClient();
+  const supabase = await createMutableServerClient();
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {

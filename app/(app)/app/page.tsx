@@ -1,245 +1,148 @@
 import Link from "next/link";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { CreateProjectModal } from "@/components/projects/create-project-modal";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ProjectFiltersForm } from "@/components/projects/project-filters";
-import { ProjectPagination } from "@/components/projects/project-pagination";
-import { getActiveWorkspace } from "@/lib/auth/workspace";
-import { filterProjects, normalizeProjectFilters, paginateProjects, sortProjects } from "@/lib/projects/filters";
 import { createClient } from "@/lib/supabase/server";
 
-function formatCurrency(value: number | null) {
-  if (value == null) {
-    return "Not set";
+function isTenderStatus(value: string | null) {
+  if (!value) {
+    return true;
   }
-
-  return new Intl.NumberFormat("en-AU", {
-    style: "currency",
-    currency: "AUD",
-    maximumFractionDigits: 0,
-  }).format(value);
+  return ["tender", "pre-construction", "pre_construction"].includes(value.toLowerCase());
 }
 
 export default async function AppDashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; scan?: string; risk?: string; sort?: string; page?: string }>;
+  searchParams: Promise<{ message?: string }>;
 }) {
-  const filters = normalizeProjectFilters(await searchParams);
+  const { message } = await searchParams;
   const supabase = await createClient();
-  const workspace = await getActiveWorkspace();
-  const companyId = workspace?.company?.id;
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
+  if (!user) {
+    return null;
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("default_company_id")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const companyId = profile?.default_company_id ?? null;
   const { data: projects } = companyId
     ? await supabase
         .from("projects")
-        .select("id, name, status, contract_value, site_due_date, variation_process, claim_submission_method")
+        .select("id, name, status, claim_submission_method, site_due_date")
         .eq("company_id", companyId)
-        .order("created_at", { ascending: false })
+        .order("updated_at", { ascending: false })
     : { data: [] };
 
-  const projectIds = (projects ?? []).map((project) => project.id);
-  const { data: documents } = projectIds.length
-    ? await supabase
-        .from("documents")
-        .select("id, project_id, parse_status")
-        .in("project_id", projectIds)
-    : { data: [] };
+  const { data: docs } =
+    projects && projects.length
+      ? await supabase
+          .from("documents")
+          .select("project_id, parse_status")
+          .in(
+            "project_id",
+            projects.map((project) => project.id),
+          )
+      : { data: [] };
 
-  const { data: scans } = projectIds.length
-    ? await supabase
-        .from("contract_scans")
-        .select("id, project_id, status, completed_at")
-        .in("project_id", projectIds)
-        .order("created_at", { ascending: false })
-    : { data: [] };
-
-  const scanIds = (scans ?? []).map((scan) => scan.id);
-  const { data: findings } = scanIds.length
-    ? await supabase
-        .from("contract_scan_findings")
-        .select("id, scan_id, severity")
-        .in("scan_id", scanIds)
-    : { data: [] };
-
-  const findingsByScan = new Map<string, Array<{ severity: string }>>();
-  (findings ?? []).forEach((finding) => {
-    const list = findingsByScan.get(finding.scan_id) ?? [];
-    list.push({ severity: finding.severity });
-    findingsByScan.set(finding.scan_id, list);
-  });
-
-  const documentsByProject = new Map<string, number>();
-  const indexedDocumentsByProject = new Map<string, number>();
-  (documents ?? []).forEach((document) => {
-    documentsByProject.set(document.project_id, (documentsByProject.get(document.project_id) ?? 0) + 1);
-    if (document.parse_status === "indexed") {
-      indexedDocumentsByProject.set(
-        document.project_id,
-        (indexedDocumentsByProject.get(document.project_id) ?? 0) + 1,
-      );
+  const indexedByProject = new Map<string, number>();
+  (docs ?? []).forEach((doc) => {
+    if (doc.parse_status === "indexed") {
+      indexedByProject.set(String(doc.project_id), (indexedByProject.get(String(doc.project_id)) ?? 0) + 1);
     }
   });
 
-  const latestScanByProject = new Map<string, { id: string; status: string }>();
-  (scans ?? []).forEach((scan) => {
-    if (!latestScanByProject.has(scan.project_id)) {
-      latestScanByProject.set(scan.project_id, { id: scan.id, status: scan.status });
-    }
-  });
+  const projectRows = (projects ?? []).map((project) => ({
+    id: String(project.id),
+    name: String(project.name),
+    status: project.status ? String(project.status) : null,
+    indexedDocs: indexedByProject.get(String(project.id)) ?? 0,
+    siteDueDate: project.site_due_date ? String(project.site_due_date) : null,
+    claimSubmissionMethod: project.claim_submission_method ? String(project.claim_submission_method) : null,
+  }));
 
-  const projectRows = (projects ?? []).map((project) => {
-    const latestScan = latestScanByProject.get(project.id);
-    const latestFindings = latestScan ? findingsByScan.get(latestScan.id) ?? [] : [];
-    const highRiskCount = latestFindings.filter((finding) => finding.severity === "high").length;
-
-    return {
-      ...project,
-      indexedDocuments: indexedDocumentsByProject.get(project.id) ?? 0,
-      totalDocuments: documentsByProject.get(project.id) ?? 0,
-      latestScanStatus: latestScan?.status ?? "none",
-      highRiskCount,
-    };
-  });
-
-  const filteredProjects = filterProjects(projectRows, filters);
-  const sortedProjects = sortProjects(filteredProjects, filters.sort);
-  const paginatedProjects = paginateProjects(sortedProjects, filters.page, 6);
-  const completedScans = filteredProjects.filter((project) => project.latestScanStatus === "completed").length;
-  const indexedDocuments = filteredProjects.reduce((total, project) => total + project.indexedDocuments, 0);
-  const highRiskCount = filteredProjects.reduce((total, project) => total + (project.highRiskCount ?? 0), 0);
+  const tenderProjects = projectRows.filter((project) => isTenderStatus(project.status));
+  const liveProjects = projectRows.filter((project) => !isTenderStatus(project.status));
 
   return (
-    <main>
-      <div className="py-4">
-        <div className="mb-8 flex items-end justify-between gap-4">
-          <div>
-            <Badge>Workspace</Badge>
-            <h1 className="mt-3 font-heading text-4xl">Project Dashboard</h1>
-            <p className="mt-2 text-muted">
-              Commercial control across contracts, claims, variations, and risk for{" "}
-              {workspace?.company?.name ?? "your company"}.
-            </p>
-          </div>
-          <div className="flex gap-3">
-            <Button asChild variant="secondary">
-              <Link href="/app/projects">Manage projects</Link>
-            </Button>
-            <Button asChild>
-              <Link href="/app/vault">Open vault</Link>
-            </Button>
-          </div>
-        </div>
+    <main className="space-y-8">
+      <header className="space-y-5 pt-1 text-center">
+        <h1 className="font-heading text-4xl text-text/90">Bidmetric</h1>
+        <h2 className="font-heading text-6xl">Projects</h2>
+      </header>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Portfolio filters</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ProjectFiltersForm action="/app" filters={filters} />
-          </CardContent>
-        </Card>
-
-        <section className="mt-6 grid gap-6 lg:grid-cols-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Filtered Projects</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-4xl font-semibold">{filteredProjects.length}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Completed Scans</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-4xl font-semibold">{completedScans}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Indexed Documents</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-4xl font-semibold">{indexedDocuments}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>High Risks Identified</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-4xl font-semibold">{highRiskCount}</p>
-            </CardContent>
-          </Card>
-        </section>
-
-        <section className="mt-8 grid gap-6">
-          {paginatedProjects.items.length ? (
-            paginatedProjects.items.map((project) => (
-              <Card key={project.id}>
-                <CardHeader className="flex flex-row items-start justify-between gap-4">
-                  <div>
-                    <CardTitle>{project.name}</CardTitle>
-                    <p className="mt-2 text-sm text-muted">
-                      Contract value {formatCurrency(project.contract_value)}
-                    </p>
-                  </div>
-                  <Badge variant="secondary">
-                    {project.highRiskCount ? `${project.highRiskCount} high risks` : "Workspace ready"}
-                  </Badge>
-                </CardHeader>
-                <CardContent className="grid gap-4 text-sm text-muted md:grid-cols-5">
-                  <div>
-                    <p className="font-medium text-text">Status</p>
-                    <p>{project.status}</p>
-                  </div>
-                  <div>
-                    <p className="font-medium text-text">Due on site</p>
-                    <p>{project.site_due_date ?? "Not set"}</p>
-                  </div>
-                  <div>
-                    <p className="font-medium text-text">Claim submission</p>
-                    <p>{project.claim_submission_method ?? "Not captured yet"}</p>
-                  </div>
-                  <div>
-                    <p className="font-medium text-text">Indexed documents</p>
-                    <p>
-                      {project.indexedDocuments} / {project.totalDocuments}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="font-medium text-text">Project workspace</p>
-                    <Link className="underline-offset-4 hover:underline" href={`/app/projects/${project.id}`}>
-                      Open workspace
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          ) : (
+      <section className="space-y-6">
+        {!projectRows.length ? (
+          <div className="mx-auto max-w-2xl space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>No projects match these filters</CardTitle>
+                <CardTitle>Create your first project</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4 text-sm text-muted">
-                <p>Try broadening the search or resetting the filter state.</p>
-                <Button asChild variant="secondary">
-                  <Link href="/app">Reset filters</Link>
-                </Button>
+              <CardContent className="flex justify-start">
+                {message ? (
+                  <div className="mr-3 rounded-xl border border-border bg-bg px-3 py-2 text-sm text-muted">
+                    {message}
+                  </div>
+                ) : null}
+                <CreateProjectModal triggerLabel="Create project" />
               </CardContent>
             </Card>
-          )}
-        </section>
-        <ProjectPagination
-          basePath="/app"
-          currentPage={paginatedProjects.currentPage}
-          filters={filters}
-          totalPages={paginatedProjects.totalPages}
-        />
-      </div>
+          </div>
+        ) : (
+          <div className="mx-auto max-w-5xl space-y-10">
+            {([
+              { label: "Tenders", items: tenderProjects },
+              { label: "Live", items: liveProjects },
+            ] as const).map((group) => (
+              <section className="space-y-4" key={group.label}>
+                <h3 className="text-3xl font-semibold">{group.label}</h3>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {group.items.length ? (
+                    group.items.map((project) => (
+                      <Link href={`/app/projects/${project.id}`} key={project.id}>
+                        <Card className="h-full transition-transform hover:-translate-y-0.5">
+                          <CardHeader>
+                            <CardTitle className="text-2xl">{project.name}</CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-2 text-sm text-muted">
+                            <p>
+                              Vault:{" "}
+                              <span className={project.indexedDocs ? "font-semibold text-[#5f976f]" : "font-semibold text-red-500"}>
+                                {project.indexedDocs ? "Scanned" : "No Docs"}
+                              </span>
+                            </p>
+                            <p>
+                              Tender Due:{" "}
+                              <span className="font-semibold text-text">
+                                {project.siteDueDate ?? "Not set"}
+                              </span>
+                            </p>
+                            {project.claimSubmissionMethod ? (
+                              <p>
+                                Progress Claim:{" "}
+                                <span className="font-semibold text-text">{project.claimSubmissionMethod}</span>
+                              </p>
+                            ) : null}
+                          </CardContent>
+                        </Card>
+                      </Link>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted">No projects in this section.</p>
+                  )}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+      </section>
     </main>
   );
 }

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { failJob, claimNextJob, completeJob, requeueStaleJobs } from "@/lib/jobs/queue";
+import { failJob, claimJobsBatch, completeJob, requeueStaleJobs } from "@/lib/jobs/queue";
 import { updateDocumentStatus } from "@/lib/jobs/documents";
 import { failScanForDocument, queueScanForDocument } from "@/lib/jobs/scans";
 import { updateAssistantRun } from "@/lib/assistant/store";
@@ -10,26 +10,22 @@ import type { AssistantJobPayload, DocumentJobPayload, JobPayload, JobType } fro
 
 const POLL_INTERVAL_MS = 2000;
 const STALE_JOB_SWEEP_INTERVAL = 30;
+const CLAIM_BATCH_SIZE = 5;
+const MAX_PARALLEL_JOBS = 3;
 
-async function tick(workerId: string) {
-  const job = await claimNextJob(workerId);
-
-  if (!job) {
-    return false;
-  }
+async function processJob(job: Record<string, unknown>) {
+  const jobType = job.job_type as JobType;
+  const payload = job.payload as JobPayload;
 
   try {
-    await runDocumentJob(job.job_type as JobType, job.payload as JobPayload);
+    await runDocumentJob(jobType, payload);
     await completeJob(job.id as string);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown job error";
-    const payload = job.payload as JobPayload;
 
     if (
       job.document_id &&
-      (job.job_type === "document.parse" ||
-        job.job_type === "document.chunk" ||
-        job.job_type === "document.embed")
+      (jobType === "document.parse" || jobType === "document.chunk" || jobType === "document.embed")
     ) {
       await updateDocumentStatus({
         documentId: String(job.document_id),
@@ -39,7 +35,7 @@ async function tick(workerId: string) {
     }
 
     if (
-      (job.job_type === "scan.quick_extract" || job.job_type === "scan.deep_extract") &&
+      (jobType === "scan.quick_extract" || jobType === "scan.deep_extract") &&
       (payload as DocumentJobPayload).documentId
     ) {
       const nextStatus = await failJob(job.id as string, message);
@@ -54,7 +50,7 @@ async function tick(workerId: string) {
       return true;
     }
 
-    if (job.job_type === "assistant.quick_answer" || job.job_type === "assistant.deep_answer") {
+    if (jobType === "assistant.quick_answer" || jobType === "assistant.deep_answer") {
       const nextStatus = await failJob(job.id as string, message);
       const assistantPayload = payload as AssistantJobPayload;
 
@@ -69,6 +65,22 @@ async function tick(workerId: string) {
     }
 
     await failJob(job.id as string, message);
+  }
+}
+
+async function tick(workerId: string) {
+  const claimed = await claimJobsBatch({
+    workerId,
+    batchSize: CLAIM_BATCH_SIZE,
+  });
+
+  if (!claimed.length) {
+    return false;
+  }
+
+  for (let index = 0; index < claimed.length; index += MAX_PARALLEL_JOBS) {
+    const batch = claimed.slice(index, index + MAX_PARALLEL_JOBS);
+    await Promise.all(batch.map((job) => processJob(job)));
   }
 
   return true;

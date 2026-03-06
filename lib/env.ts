@@ -19,6 +19,10 @@ const envSchema = z.object({
   STRIPE_PRICE_ID: optionalString,
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: optionalString,
   NEXT_PUBLIC_APP_URL: z.url().default("http://localhost:3000"),
+  MICROSOFT_CLIENT_ID: optionalString,
+  MICROSOFT_CLIENT_SECRET: optionalString,
+  MICROSOFT_TENANT_ID: optionalString,
+  MICROSOFT_GRAPH_SCOPES: optionalString,
 });
 
 let cachedEnv: z.infer<typeof envSchema> | null = null;
@@ -39,6 +43,10 @@ export function getEnv() {
       STRIPE_PRICE_ID: process.env.STRIPE_PRICE_ID,
       NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
       NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+      MICROSOFT_CLIENT_ID: process.env.MICROSOFT_CLIENT_ID,
+      MICROSOFT_CLIENT_SECRET: process.env.MICROSOFT_CLIENT_SECRET,
+      MICROSOFT_TENANT_ID: process.env.MICROSOFT_TENANT_ID,
+      MICROSOFT_GRAPH_SCOPES: process.env.MICROSOFT_GRAPH_SCOPES,
     });
   }
 

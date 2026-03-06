@@ -1,9 +1,12 @@
 export type AssistantCitation = {
-  sourceId: string;
+  chunkId?: string;
   documentId: string;
   documentName: string;
-  pageNumber: number | null;
+  page?: number | null;
   snippet: string;
+  score?: number;
+  sourceId: string;
+  pageNumber?: number | null;
   sectionTitle?: string;
 };
 
@@ -12,6 +15,13 @@ export type AssistantThreadType = "project_assistant" | "contract_review";
 export type AssistantMode = "auto" | "draft" | "answer";
 
 export type AssistantRunStatus = "queued" | "in_progress" | "completed" | "failed";
+export type AssistantRunStage =
+  | "queued"
+  | "retrieving"
+  | "reranking"
+  | "generating"
+  | "completed"
+  | "failed";
 
 export type AssistantMessageMetadata = {
   messageType?:

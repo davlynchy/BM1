@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { createProjectAssistantThread } from "@/lib/assistant/workbench";
-import { listAssistantThreads } from "@/lib/assistant/store";
+import { createAssistantThread, listAssistantThreads, replaceAssistantThreadSources } from "@/lib/assistant/store";
 import { requireProjectAccess } from "@/lib/projects/access";
 
 const createThreadSchema = z.object({
@@ -37,7 +36,7 @@ export async function POST(
 ) {
   try {
     const { projectId } = await params;
-    const { user } = await requireProjectAccess(projectId);
+    const { user, project } = await requireProjectAccess(projectId);
     const body = await request.json();
     const parsed = createThreadSchema.safeParse(body);
 
@@ -45,11 +44,18 @@ export async function POST(
       return NextResponse.json({ error: "Invalid thread request." }, { status: 400 });
     }
 
-    const thread = await createProjectAssistantThread({
-      projectId,
+    const thread = await createAssistantThread({
+      companyId: String(project.company_id),
+      projectId: String(project.id),
       userId: String(user.id),
+      threadType: "project_assistant",
       title: parsed.data.title,
-      sourceDocumentIds: parsed.data.sourceDocumentIds,
+    });
+    await replaceAssistantThreadSources({
+      threadId: String(thread.id),
+      companyId: String(project.company_id),
+      projectId: String(project.id),
+      documentIds: parsed.data.sourceDocumentIds,
     });
 
     return NextResponse.json({

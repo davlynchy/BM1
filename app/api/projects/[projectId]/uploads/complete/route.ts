@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { shouldCreatePreviewScan } from "@/lib/billing/entitlements";
 import { enqueueDocumentJob } from "@/lib/jobs/queue";
+import { ensureContractReviewThread } from "@/lib/scans/review-thread";
 import { completeMultipartUpload, headR2Object } from "@/lib/storage/r2";
 import { requireProjectAccess } from "@/lib/projects/access";
 
@@ -34,7 +36,7 @@ export async function POST(
       return NextResponse.json({ error: "Invalid upload completion payload." }, { status: 400 });
     }
 
-    const { supabase, project } = await requireProjectAccess(projectId);
+    const { supabase, project, user } = await requireProjectAccess(projectId);
     const { data: batch, error: batchError } = await supabase
       .from("upload_batches")
       .select("id, source")
@@ -47,6 +49,8 @@ export async function POST(
     }
 
     const queuedDocuments = [];
+    const createdReviewThreads: Array<{ threadId: string; scanId: string }> = [];
+    const isFreePreview = await shouldCreatePreviewScan(String(project.company_id));
 
     for (const uploaded of parsed.data.uploaded) {
       const { data: document, error } = await supabase
@@ -110,6 +114,59 @@ export async function POST(
         },
       });
 
+      if (document.document_type === "contract") {
+        const { data: existingScan, error: existingScanError } = await supabase
+          .from("contract_scans")
+          .select("id")
+          .eq("project_id", project.id)
+          .eq("contract_document_id", document.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (existingScanError) {
+          throw existingScanError;
+        }
+
+        const { data: scan, error: scanError } = existingScan
+          ? { data: existingScan, error: null }
+          : await supabase
+              .from("contract_scans")
+              .insert({
+                company_id: document.company_id,
+                project_id: project.id,
+                contract_document_id: document.id,
+                status: "queued",
+                is_free_preview: isFreePreview,
+                summary: {
+                  executiveSummary:
+                    "Your contract is being processed. Bidmetric is extracting text and preparing a clause index now.",
+                  topThemes: ["document ingestion", "clause indexing", "commercial extraction"],
+                  sourceFile: document.name,
+                },
+                created_by: user.id,
+              })
+              .select("id")
+              .single();
+
+        if (scanError || !scan) {
+          throw scanError ?? new Error("Unable to create contract scan.");
+        }
+
+        const thread = await ensureContractReviewThread({
+          companyId: String(document.company_id),
+          projectId: String(project.id),
+          scanId: String(scan.id),
+          userId: String(user.id),
+          contractName: String(document.name),
+        });
+
+        createdReviewThreads.push({
+          threadId: String(thread.id),
+          scanId: String(scan.id),
+        });
+      }
+
       queuedDocuments.push({
         id: document.id,
         name: document.name,
@@ -132,6 +189,9 @@ export async function POST(
     return NextResponse.json({
       batchId: batch.id,
       documents: queuedDocuments,
+      assistantUrl: createdReviewThreads.length
+        ? `/app/projects/${project.id}/assistant?threadId=${encodeURIComponent(createdReviewThreads[0].threadId)}`
+        : null,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to finalize upload.";

@@ -179,6 +179,8 @@ const faqs = [
 ];
 
 export default function LandingPage() {
+  const startHref = "/login?next=%2Fapp";
+
   return (
     <main className="bg-[#f6f7f2] text-text">
       <section className="px-4 pb-16 pt-6 md:px-6 md:pb-24">
@@ -201,7 +203,7 @@ export default function LandingPage() {
                 className="rounded-full bg-[#234838] px-5 shadow-[0_10px_24px_rgba(35,72,56,0.2)] hover:bg-[#1c3a2d]"
                 size="sm"
               >
-                <Link href="/upload">Get Started</Link>
+                <Link href={startHref}>Get Started</Link>
               </Button>
             </div>
           </header>
@@ -223,39 +225,16 @@ export default function LandingPage() {
               draft correspondence, and keep your commercial team ahead.
             </p>
 
-            <div className="mt-10 w-full max-w-[540px] rounded-3xl border border-[#dfe4d8] bg-white px-6 py-5 text-left shadow-[0_16px_36px_rgba(25,39,32,0.08)]" id="hero-upload">
-              <p className="text-sm uppercase tracking-[0.16em] text-[#6f7d72]">Start in your workspace</p>
-              <p className="mt-3 text-base leading-7 text-[#5e685f]">
-                Sign in to open your project vault, upload contracts, and run assistant-led reviews.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-3">
-                <Button asChild className="rounded-full bg-[#234838] hover:bg-[#1c3a2d]" size="sm">
-                  <Link href="/login?next=%2Fapp%2Fvault">Log In</Link>
-                </Button>
-                <Button asChild className="rounded-full border-[#d9ddd4] bg-white text-[#34443c] hover:bg-[#f5f6f1]" size="sm" variant="secondary">
-                  <Link href="/signup?next=%2Fapp%2Fvault">Create Account</Link>
-                </Button>
-              </div>
-            </div>
-
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               <Button
                 asChild
                 className="rounded-full bg-[#234838] px-7 shadow-[0_14px_24px_rgba(35,72,56,0.2)] hover:bg-[#1c3a2d]"
                 size="lg"
               >
-                <Link href="/upload">
-                  Start Free Project
+                <Link href={startHref}>
+                  Start Your Project
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
-              </Button>
-              <Button
-                asChild
-                className="rounded-full border-[#d9ddd4] bg-white px-7 text-[#34443c] hover:bg-[#f5f6f1]"
-                size="lg"
-                variant="secondary"
-              >
-                <Link href="mailto:hello@bidmetric.com">Request Demo</Link>
               </Button>
             </div>
           </div>
@@ -310,7 +289,7 @@ export default function LandingPage() {
                 className="mt-8 rounded-full border-white/15 bg-white/6 px-6 text-white hover:bg-white/10"
                 variant="secondary"
               >
-                <Link href="/upload">
+                <Link href={startHref}>
                   See it in action
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
@@ -430,7 +409,7 @@ export default function LandingPage() {
                 className="mt-10 w-full rounded-full bg-[#234838] py-6 text-base shadow-[0_14px_24px_rgba(35,72,56,0.2)] hover:bg-[#1c3a2d]"
                 size="lg"
               >
-                <Link href="/upload">Get Started</Link>
+                <Link href={startHref}>Get Started</Link>
               </Button>
               <p className="mt-4 text-xs text-[#8a9389]">Free contract assessment to try. No credit card required.</p>
             </article>

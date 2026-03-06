@@ -1,20 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { AssistantComposer } from "@/components/assistant/assistant-composer";
-import { OutputCard } from "@/components/assistant/output-card";
-import { RunStatusCard } from "@/components/assistant/run-status-card";
 import { SourceDrawer } from "@/components/assistant/source-drawer";
-import { ThreadList } from "@/components/assistant/thread-list";
 import { ThreadTimeline } from "@/components/assistant/thread-timeline";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { AssistantRunRecord, AssistantSourceSelection, AssistantThreadSummary } from "@/types/assistant";
+import { Card, CardContent } from "@/components/ui/card";
+import type { AssistantMessageRecord, AssistantRunRecord, AssistantSourceSelection, AssistantThreadSummary } from "@/types/assistant";
 import type { ProjectOutputRecord } from "@/types/outputs";
 import type { VaultFileRecord } from "@/types/vault";
-import type { AssistantMessageRecord } from "@/types/assistant";
 
 type WorkspaceState = {
   activeThread: AssistantThreadSummary | null;
@@ -26,30 +20,52 @@ type WorkspaceState = {
   outputs: ProjectOutputRecord[];
 };
 
+const promptGroups = {
+  Draft: [
+    "Draft email requesting extension of time",
+    "Request tender submission feedback",
+    "Draft RFI for unclear scope",
+  ],
+  Ask: [
+    "Review subcontract red flags",
+    "Draft a variation claim",
+    "When is progress claim due?",
+  ],
+  Create: [
+    "Create SWMS document",
+    "Create toolbox talk",
+    "Create working at heights permit",
+  ],
+} as const;
+
 export function AssistantWorkspace({
   projectId,
   initialState,
+  initialPrompt,
 }: {
   projectId: string;
   initialState: WorkspaceState;
+  initialPrompt?: string | null;
 }) {
-  const router = useRouter();
   const [state, setState] = useState(initialState);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>(
     initialState.sources.map((source) => source.documentId),
   );
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-
+  const activeEventSourceRef = useRef<EventSource | null>(null);
+  const activeThreadId = state.activeThread?.id ?? null;
+  const hasPendingRun = useMemo(() => state.runs.some((run) => run.status !== "completed"), [state.runs]);
   const indexedDocuments = useMemo(
     () => state.documents.filter((document) => document.parseStatus === "indexed"),
     [state.documents],
   );
-  const hasPendingRun = useMemo(
-    () => state.runs.some((run) => run.status === "queued" || run.status === "in_progress"),
-    [state.runs],
-  );
-  const activeThreadId = state.activeThread?.id ?? null;
+  const latestAssistantCitations = useMemo(() => {
+    const latestAssistant = [...state.messages].reverse().find((message) => message.role === "assistant");
+    return latestAssistant?.citations ?? [];
+  }, [state.messages]);
+  const showSources =
+    state.sources.length > 0 || selectedDocumentIds.length > 0 || latestAssistantCitations.length > 0;
 
   function toggleDocument(documentId: string) {
     setSelectedDocumentIds((current) =>
@@ -59,286 +75,236 @@ export function AssistantWorkspace({
     );
   }
 
-  function loadThread(threadId: string) {
-    setError(null);
-    startTransition(async () => {
-      const response = await fetch(`/api/projects/${projectId}/assistant/threads/${threadId}/timeline`, {
-        cache: "no-store",
-      });
-      const payload = (await response.json()) as {
-        error?: string;
-        activeThread?: AssistantThreadSummary | null;
-        threads?: AssistantThreadSummary[];
-        messages?: AssistantMessageRecord[];
-        sources?: AssistantSourceSelection[];
-        runs?: AssistantRunRecord[];
-        documents?: VaultFileRecord[];
-      };
-
-      if (!response.ok) {
-        setError(payload.error ?? "Unable to load thread.");
-        return;
-      }
-
-      setState((current) => ({
-        ...current,
-        activeThread: payload.activeThread ?? null,
-        threads: payload.threads ?? current.threads,
-        messages: payload.messages ?? [],
-        sources: payload.sources ?? [],
-        runs: payload.runs ?? [],
-        documents: payload.documents ?? current.documents,
-      }));
-      setSelectedDocumentIds(payload.sources?.map((source) => source.documentId) ?? []);
+  const loadThread = useCallback(async (threadId: string) => {
+    const response = await fetch(`/api/projects/${projectId}/assistant/threads/${threadId}`, {
+      cache: "no-store",
     });
-  }
+    const payload = (await response.json()) as {
+      error?: string;
+      threadId?: string;
+      messages?: AssistantMessageRecord[];
+      sources?: AssistantSourceSelection[];
+      runs?: AssistantRunRecord[];
+    };
 
-  async function createThreadRequest() {
-    const response = await fetch(`/api/projects/${projectId}/assistant/threads`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        title: "New thread",
-        threadType: "project_assistant",
-        sourceDocumentIds: selectedDocumentIds,
-      }),
-    });
-    const payload = (await response.json()) as { error?: string; thread?: { id: string } };
-
-    if (!response.ok || !payload.thread?.id) {
-      throw new Error(payload.error ?? "Unable to create thread.");
+    if (!response.ok) {
+      setError(payload.error ?? "Unable to load thread.");
+      return;
     }
 
-    return payload.thread.id;
-  }
+    setState((current) => ({
+      ...current,
+      activeThread: payload.threadId
+        ? ({
+            id: payload.threadId,
+            title: current.activeThread?.title ?? "New query",
+            threadType: "project_assistant",
+            scanId: null,
+            lastMessagePreview: current.messages.at(-1)?.content ?? null,
+            lastMessageAt: current.messages.at(-1)?.createdAt ?? null,
+            sourceCount: payload.sources?.length ?? 0,
+          } satisfies AssistantThreadSummary)
+        : current.activeThread,
+      messages: payload.messages ?? current.messages,
+      sources: payload.sources ?? current.sources,
+      runs: payload.runs ?? current.runs,
+    }));
+    setSelectedDocumentIds(payload.sources?.map((source) => source.documentId) ?? []);
+  }, [projectId]);
 
-  function createThread() {
-    setError(null);
-    startTransition(async () => {
-      try {
-        const threadId = await createThreadRequest();
-        loadThread(threadId);
-        router.refresh();
-      } catch (caughtError) {
-        setError(caughtError instanceof Error ? caughtError.message : "Unable to create thread.");
-        return;
-      }
-    });
-  }
-
-  function sendMessage(params: {
+  const sendMessage = useCallback((params: {
     message: string;
     mode: "auto" | "draft" | "answer";
     selectedOutputType: "email" | "memo" | "summary" | "checklist" | null;
-  }) {
+  }) => {
+    const question = params.message.trim();
+    if (!question) {
+      return;
+    }
+
     setError(null);
-    startTransition(async () => {
-      let threadId = state.activeThread?.id ?? null;
-
-      try {
-        if (!threadId) {
-          threadId = await createThreadRequest();
-        }
-      } catch (caughtError) {
-        setError(caughtError instanceof Error ? caughtError.message : "Unable to create thread.");
-        return;
-      }
-
-      const response = await fetch(
-        `/api/projects/${projectId}/assistant/threads/${threadId}/messages`,
+    const optimisticUserId = `tmp-user-${Date.now()}`;
+    const optimisticAssistantId = `tmp-assistant-${Date.now()}`;
+    setState((current) => ({
+      ...current,
+      messages: [
+        ...current.messages,
         {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
+          id: optimisticUserId,
+          role: "user",
+          content: question,
+          createdAt: new Date().toISOString(),
+          citations: [],
+          metadata: {},
+        },
+        {
+          id: optimisticAssistantId,
+          role: "assistant",
+          content: "",
+          createdAt: new Date().toISOString(),
+          citations: [],
+          metadata: {
+            messageType: "system_progress",
+            isPartial: true,
           },
-          body: JSON.stringify({
-            message: params.message,
-            mode: params.mode,
-            sourceDocumentIds: selectedDocumentIds,
-            selectedOutputType: params.selectedOutputType,
-          }),
         },
-      );
-      const payload = (await response.json()) as {
-        error?: string;
-        detail?: Omit<WorkspaceState, "outputs">;
-      };
+      ],
+    }));
 
-      const detail = payload.detail;
-
-      if (!response.ok || !detail) {
-        setError(payload.error ?? "Unable to send message.");
-        return;
-      }
-
-      setState((current) => ({
-        ...current,
-        activeThread: detail.activeThread,
-        threads: detail.threads,
-        messages: detail.messages,
-        sources: detail.sources,
-        runs: detail.runs,
-        documents: detail.documents,
-      }));
-    });
-  }
-
-  useEffect(() => {
-    if (!activeThreadId || !hasPendingRun) {
-      return;
-    }
-
-    const interval = setInterval(() => {
-      void fetch(`/api/projects/${projectId}/assistant/threads/${activeThreadId}/timeline`, {
-        cache: "no-store",
-      })
-        .then(async (response) => {
-          const payload = (await response.json()) as {
-            error?: string;
-            activeThread?: AssistantThreadSummary | null;
-            threads?: AssistantThreadSummary[];
-            messages?: AssistantMessageRecord[];
-            sources?: AssistantSourceSelection[];
-            runs?: AssistantRunRecord[];
-            documents?: VaultFileRecord[];
-          };
-
-          if (!response.ok) {
-            return;
-          }
-
-          setState((current) => ({
-            ...current,
-            activeThread: payload.activeThread ?? null,
-            threads: payload.threads ?? current.threads,
-            messages: payload.messages ?? [],
-            sources: payload.sources ?? [],
-            runs: payload.runs ?? [],
-            documents: payload.documents ?? current.documents,
-          }));
-        })
-        .catch(() => undefined);
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [activeThreadId, hasPendingRun, projectId]);
-
-  async function createOutput(type: "email" | "memo" | "summary" | "checklist") {
-    if (!state.activeThread?.id) {
-      return;
-    }
-
-    const titleBase =
-      state.activeThread.title && state.activeThread.title !== "New thread"
-        ? state.activeThread.title
-        : "Assistant output";
-
-    setError(null);
     startTransition(async () => {
-      const response = await fetch(`/api/projects/${projectId}/outputs`, {
+      const response = await fetch(`/api/projects/${projectId}/assistant/messages`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          threadId: state.activeThread?.id,
-          type,
-          title: `${titleBase} (${type})`,
+          threadId: activeThreadId ?? undefined,
+          message: question,
+          mode: params.mode,
+          sourceDocumentIds: selectedDocumentIds,
+          selectedOutputType: params.selectedOutputType,
         }),
       });
-      const payload = (await response.json()) as { error?: string; output?: ProjectOutputRecord };
+      const payload = (await response.json()) as { error?: string; threadId?: string; runId?: string };
 
-      if (!response.ok || !payload.output) {
-        setError(payload.error ?? "Unable to create output.");
+      if (!response.ok || !payload.threadId || !payload.runId) {
+        setError(payload.error ?? "Unable to send message.");
+        setState((current) => ({
+          ...current,
+          messages: current.messages.filter(
+            (message) => message.id !== optimisticUserId && message.id !== optimisticAssistantId,
+          ),
+        }));
         return;
       }
 
       setState((current) => ({
         ...current,
-        outputs: [payload.output!, ...current.outputs],
+        activeThread: current.activeThread ?? {
+          id: payload.threadId!,
+          title: "New query",
+          threadType: "project_assistant",
+          scanId: null,
+          lastMessagePreview: question,
+          lastMessageAt: new Date().toISOString(),
+          sourceCount: selectedDocumentIds.length,
+        },
       }));
-      router.push(`/app/projects/${projectId}/outputs/${payload.output.id}`);
+
+      activeEventSourceRef.current?.close();
+      const eventSource = new EventSource(
+        `/api/projects/${projectId}/assistant/runs/${payload.runId}/stream`,
+      );
+      activeEventSourceRef.current = eventSource;
+
+      eventSource.addEventListener("token", (event) => {
+        try {
+          const data = JSON.parse(event.data) as { delta?: string };
+          const delta = data.delta ?? "";
+          if (!delta) {
+            return;
+          }
+          setState((current) => ({
+            ...current,
+            messages: current.messages.map((message) =>
+              message.id === optimisticAssistantId
+                ? { ...message, content: `${message.content}${delta}` }
+                : message,
+            ),
+          }));
+        } catch {
+          // noop
+        }
+      });
+
+      eventSource.addEventListener("complete", async () => {
+        eventSource.close();
+        activeEventSourceRef.current = null;
+        await loadThread(payload.threadId!);
+      });
+
+      eventSource.addEventListener("error", () => {
+        eventSource.close();
+        activeEventSourceRef.current = null;
+        setError("Assistant stream failed.");
+      });
     });
-  }
+  }, [activeThreadId, loadThread, projectId, selectedDocumentIds]);
+
+  useEffect(() => {
+    if (!initialPrompt || state.messages.length) {
+      return;
+    }
+
+    sendMessage({
+      message: initialPrompt,
+      mode: "auto",
+      selectedOutputType: null,
+    });
+  }, [initialPrompt, sendMessage, state.messages.length]);
+
+  useEffect(() => {
+    return () => {
+      activeEventSourceRef.current?.close();
+      activeEventSourceRef.current = null;
+    };
+  }, []);
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
-      <div className="space-y-4">
+    <div className={`mx-auto grid max-w-7xl gap-6 ${showSources ? "xl:grid-cols-[1fr_300px]" : "grid-cols-1"}`}>
+      <div className="space-y-6">
         <Card>
-          <CardHeader className="flex flex-row items-start justify-between gap-3">
-            <div>
-              <CardTitle>Threads</CardTitle>
-            </div>
-            <Button onClick={createThread} size="sm" type="button" variant="secondary">
-              New
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <ThreadList
-              activeThreadId={state.activeThread?.id ?? null}
-              onSelect={loadThread}
-              threads={state.threads}
-            />
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>{state.activeThread?.title ?? "AI Assistant"}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <ThreadTimeline isUpdating={isPending} messages={state.messages} />
-            {error ? (
-              <div className="rounded-xl border border-border bg-bg px-4 py-3 text-sm text-muted">
-                {error}
-              </div>
-            ) : null}
+          <CardContent className="space-y-5 pt-6">
             <AssistantComposer disabled={isPending} onSubmit={sendMessage} />
-            <div className="flex flex-wrap gap-2">
-              {(["memo", "email", "summary", "checklist"] as const).map((type) => (
-                <Button key={type} onClick={() => void createOutput(type)} size="sm" type="button" variant="secondary">
-                  Create {type}
-                </Button>
+            {error ? (
+              <p className="rounded-xl border border-border bg-bg px-3 py-2 text-sm text-red-600">{error}</p>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        {state.messages.length ? (
+          <Card>
+            <CardContent className="pt-6">
+              <ThreadTimeline isUpdating={isPending || hasPendingRun} messages={state.messages} />
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardContent className="grid gap-6 pt-6 md:grid-cols-3">
+              {Object.entries(promptGroups).map(([group, prompts]) => (
+                <div key={group}>
+                  <h3 className="text-2xl font-semibold">{group}</h3>
+                  <ul className="mt-4 space-y-3 text-base text-muted">
+                    {prompts.map((prompt) => (
+                      <li key={prompt}>
+                        <button
+                          className="text-left hover:text-text"
+                          onClick={() =>
+                            sendMessage({ message: prompt, mode: "auto", selectedOutputType: null })
+                          }
+                          type="button"
+                        >
+                          {prompt}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ))}
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
-      <div className="space-y-4">
-        <SourceDrawer
-          attachedSources={state.sources}
-          documents={indexedDocuments}
-          onToggle={toggleDocument}
-          selectedDocumentIds={selectedDocumentIds}
-        />
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent runs</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {state.runs.length ? state.runs.map((run) => <RunStatusCard key={run.id} run={run} />) : <p className="text-sm text-muted">No assistant runs yet.</p>}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent outputs</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {state.outputs.length ? (
-              state.outputs.slice(0, 4).map((output) => <OutputCard key={output.id} output={output} projectId={projectId} />)
-            ) : (
-              <p className="text-sm text-muted">Promoted drafts and memos will appear here.</p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      {showSources ? (
+        <div className="space-y-4">
+          <SourceDrawer
+            attachedSources={state.sources}
+            citations={latestAssistantCitations}
+            documents={indexedDocuments}
+            onToggle={toggleDocument}
+            selectedDocumentIds={selectedDocumentIds}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

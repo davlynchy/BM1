@@ -12,6 +12,16 @@ export async function middleware(request: NextRequest) {
   const response = NextResponse.next({
     request,
   });
+  const pathname = request.nextUrl.pathname;
+
+  if (
+    pathname === "/" ||
+    pathname === "/login" ||
+    pathname === "/signup" ||
+    pathname === "/upload"
+  ) {
+    return response;
+  }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;

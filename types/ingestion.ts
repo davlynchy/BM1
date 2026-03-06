@@ -9,6 +9,14 @@ export const DOCUMENT_PARSE_STATUSES = [
 ] as const;
 
 export type DocumentParseStatus = (typeof DOCUMENT_PARSE_STATUSES)[number];
+export const DOCUMENT_PARSE_STATUSES_V1 = [
+  "queued",
+  "parsing",
+  "chunking",
+  "embedding",
+  "indexed",
+  "failed",
+] as const;
 
 export const JOB_TYPES = [
   "document.parse",

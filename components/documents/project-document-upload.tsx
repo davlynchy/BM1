@@ -204,10 +204,16 @@ export function ProjectDocumentUpload({ projectId }: { projectId: string }) {
           uploaded: completedUploads,
         }),
       });
-      const completePayload = (await completeResponse.json()) as { error?: string };
+      const completePayload = (await completeResponse.json()) as {
+        error?: string;
+        assistantUrl?: string | null;
+      };
 
       if (!completeResponse.ok) {
         setError(completePayload.error ?? "Unable to finalize upload.");
+      } else if (completePayload.assistantUrl) {
+        window.location.href = completePayload.assistantUrl;
+        return;
       }
     }
 

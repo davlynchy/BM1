@@ -6,7 +6,7 @@ import { z } from "zod";
 import { ensureUserWorkspace } from "@/lib/auth/workspace";
 import { attachIntakeSessionToWorkspace, readIntakeSessionCookie } from "@/lib/intake/session";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
+import { createMutableServerClient } from "@/lib/supabase/server";
 
 const signInSchema = z.object({
   email: z.email(),
@@ -56,7 +56,7 @@ export async function signInAction(formData: FormData) {
     redirect("/login?message=Enter+a+valid+email+and+password.");
   }
 
-  const supabase = await createClient();
+  const supabase = await createMutableServerClient();
   const { data, error } = await supabase.auth.signInWithPassword({
     email: parsed.data.email,
     password: parsed.data.password,
@@ -108,7 +108,7 @@ export async function signUpAction(formData: FormData) {
     redirect(`/signup?message=${encodeURIComponent(createUserError.message)}`);
   }
 
-  const supabase = await createClient();
+  const supabase = await createMutableServerClient();
   const { data, error } = await supabase.auth.signInWithPassword({
     email: parsed.data.email,
     password: parsed.data.password,
@@ -132,7 +132,7 @@ export async function signUpAction(formData: FormData) {
 }
 
 export async function signOutAction() {
-  const supabase = await createClient();
+  const supabase = await createMutableServerClient();
   await supabase.auth.signOut();
   redirect("/login");
 }

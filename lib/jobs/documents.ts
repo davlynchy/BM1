@@ -91,6 +91,7 @@ export async function loadDocumentPages(documentId: string) {
 export async function replaceDocumentChunks(params: {
   documentId: string;
   companyId: string;
+  projectId?: string | null;
   chunks: Array<{
     chunkIndex: number;
     content: string;
@@ -108,6 +109,7 @@ export async function replaceDocumentChunks(params: {
       params.chunks.map((chunk) => ({
         document_id: params.documentId,
         company_id: params.companyId,
+        project_id: params.projectId ?? null,
         page_id: chunk.pageId ?? null,
         chunk_index: chunk.chunkIndex,
         content: chunk.content,

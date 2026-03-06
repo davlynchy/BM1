@@ -1,21 +1,9 @@
-import Link from "next/link";
-import type { Route } from "next";
 import { redirect } from "next/navigation";
-import { Bot, FolderOpen, LayoutDashboard, Settings } from "lucide-react";
 
 import { signOutAction } from "@/app/(auth)/actions";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { WorkbenchSidebar } from "@/components/app/workbench-sidebar";
 import { getActiveWorkspace } from "@/lib/auth/workspace";
 import { createClient } from "@/lib/supabase/server";
-
-const navItems = [
-  { href: "/app", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/app/assistant", label: "Assistant", icon: Bot },
-  { href: "/app/vault", label: "Vault", icon: FolderOpen },
-  { href: "/app/projects", label: "Projects", icon: FolderOpen },
-  { href: "/app/settings", label: "Settings", icon: Settings },
-] satisfies Array<{ href: Route; label: string; icon: typeof LayoutDashboard }>;
 
 export default async function AppLayout({
   children,
@@ -37,43 +25,32 @@ export default async function AppLayout({
     redirect("/signup?message=Finish+setting+up+your+workspace.");
   }
 
+  const { data: projects } = await supabase
+    .from("projects")
+    .select("id, name, status")
+    .eq("company_id", workspace.company.id)
+    .order("updated_at", { ascending: false });
+
   return (
     <div className="min-h-screen bg-bg">
-      <div className="container grid gap-6 py-6 lg:grid-cols-[260px_1fr]">
-        <aside className="panel h-fit p-4">
-          <div className="border-b border-border pb-4">
-            <p className="font-heading text-2xl">Bidmetric</p>
-            <p className="mt-2 text-sm text-muted">{workspace.company.name}</p>
-            <Badge className="mt-3" variant="secondary">
-              {workspace.profile?.email ?? "Workspace"}
-            </Badge>
-          </div>
-
-          <nav className="mt-4 space-y-2">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-
-              return (
-                <Link
-                  key={item.href}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-muted transition-colors hover:bg-bg hover:text-text"
-                  href={item.href}
-                >
-                  <Icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-
-          <form action={signOutAction} className="mt-6">
-            <Button className="w-full" variant="secondary">
-              Sign out
-            </Button>
-          </form>
-        </aside>
-
-        <div>{children}</div>
+      <div className="grid gap-6 px-4 py-4 lg:grid-cols-[250px_1fr]">
+        <div className="flex h-[calc(100vh-2rem)] flex-col">
+          <WorkbenchSidebar
+            companyName={workspace.company.name}
+            userDisplayName={
+              workspace.profile?.full_name?.trim() ||
+              workspace.profile?.email?.split("@")[0] ||
+              "User"
+            }
+            projects={(projects ?? []).map((project) => ({
+              id: String(project.id),
+              name: String(project.name),
+              status: project.status ? String(project.status) : null,
+            }))}
+            signOutAction={signOutAction}
+          />
+        </div>
+        <div className="py-2">{children}</div>
       </div>
     </div>
   );

@@ -1,21 +1,19 @@
 import { notFound } from "next/navigation";
 
 import { AssistantWorkspace } from "@/components/assistant/assistant-workspace";
-import { ProjectWorkbenchNav } from "@/components/projects/project-workbench-nav";
-import { listProjectOutputs } from "@/lib/outputs/store";
-import { loadProjectAssistantWorkbench } from "@/lib/assistant/workbench";
+import { ProjectPageShell } from "@/components/projects/project-page-shell";
+import { loadAssistantWorkspaceInitialState } from "@/lib/assistant/workspace-v1";
 import { createClient } from "@/lib/supabase/server";
-import type { VaultFileRecord } from "@/types/vault";
 
 export default async function ProjectAssistantPage({
   params,
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ threadId?: string }>;
+  searchParams: Promise<{ threadId?: string; emailId?: string; todoId?: string; prompt?: string }>;
 }) {
   const { projectId } = await params;
-  const { threadId } = await searchParams;
+  const { threadId, emailId, todoId, prompt } = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -25,43 +23,47 @@ export default async function ProjectAssistantPage({
     notFound();
   }
 
-  const workbench = await loadProjectAssistantWorkbench({
+  const initialState = await loadAssistantWorkspaceInitialState({
     projectId,
     userId: user.id,
     threadId,
   });
-  const outputs = await listProjectOutputs(projectId);
+
+  let initialPrompt: string | null = null;
+
+  if (prompt?.trim()) {
+    initialPrompt = prompt.trim();
+  } else if (emailId) {
+    const { data: email } = await supabase
+      .from("project_correspondence")
+      .select("subject, sender, body_text")
+      .eq("id", emailId)
+      .eq("project_id", projectId)
+      .maybeSingle();
+
+    if (email) {
+      initialPrompt = `Review this email and draft a commercially strong response.\nSubject: ${email.subject || "(No subject)"}\nFrom: ${email.sender || "Unknown"}\n\n${email.body_text || ""}`;
+    }
+  } else if (todoId) {
+    const { data: todo } = await supabase
+      .from("project_todos")
+      .select("title, summary")
+      .eq("id", todoId)
+      .eq("project_id", projectId)
+      .maybeSingle();
+
+    if (todo) {
+      initialPrompt = `Help me action this task:\n${todo.title}\n\n${todo.summary || ""}`;
+    }
+  }
 
   return (
-    <main className="space-y-6">
-      <ProjectWorkbenchNav
-        active="assistant"
-        projectId={String(workbench.project.id)}
-        projectName={String(workbench.project.name)}
-      />
+    <ProjectPageShell title="AI Assistant">
       <AssistantWorkspace
-        initialState={{
-          activeThread: workbench.activeThread,
-          threads: workbench.threads,
-          messages: workbench.messages,
-          sources: workbench.sources,
-          runs: workbench.runs,
-          documents: workbench.documents.map((document) => ({
-            id: String(document.id),
-            name: String(document.name),
-            documentType: String(document.document_type),
-            parseStatus: document.parse_status,
-            fileSize: document.file_size,
-            pageCount: document.page_count,
-            chunkCount: document.chunk_count,
-            processingError: document.processing_error,
-            createdAt: String(document.created_at),
-            updatedAt: String(document.updated_at),
-          })) as VaultFileRecord[],
-          outputs,
-        }}
+        initialPrompt={initialPrompt}
+        initialState={initialState}
         projectId={projectId}
       />
-    </main>
+    </ProjectPageShell>
   );
 }

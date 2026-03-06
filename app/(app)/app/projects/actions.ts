@@ -52,7 +52,7 @@ export async function createProjectAction(formData: FormData) {
   });
 
   if (!parsed.success) {
-    redirect("/app/projects?message=Enter+valid+project+details.");
+    redirect("/app?message=Enter+valid+project+details.");
   }
 
   const supabase = await createClient();
@@ -90,7 +90,7 @@ export async function createProjectAction(formData: FormData) {
     .single();
 
   if (error || !project) {
-    redirect(`/app/projects?message=${encodeURIComponent(error?.message ?? "Unable to create project.")}`);
+    redirect(`/app?message=${encodeURIComponent(error?.message ?? "Unable to create project.")}`);
   }
 
   redirect(`/app/projects/${project.id}`);

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { ProjectPageShell } from "@/components/projects/project-page-shell";
 import { VaultPage } from "@/components/vault/vault-page";
 import { createClient } from "@/lib/supabase/server";
 import type { VaultFileRecord } from "@/types/vault";
@@ -25,20 +26,22 @@ export default async function ProjectVaultPage({
   }
 
   return (
-    <VaultPage
-      documents={(documents ?? []).map((document) => ({
-        id: String(document.id),
-        name: String(document.name),
-        documentType: String(document.document_type),
-        parseStatus: document.parse_status,
-        fileSize: document.file_size,
-        pageCount: document.page_count,
-        chunkCount: document.chunk_count,
-        processingError: document.processing_error,
-        createdAt: String(document.created_at),
-        updatedAt: String(document.updated_at),
-      })) as VaultFileRecord[]}
-      project={{ id: String(project.id), name: String(project.name) }}
-    />
+    <ProjectPageShell title="Vault" rightSlot="Share">
+      <VaultPage
+        documents={(documents ?? []).map((document) => ({
+          id: String(document.id),
+          name: String(document.name),
+          documentType: String(document.document_type),
+          parseStatus: document.parse_status,
+          fileSize: document.file_size,
+          pageCount: document.page_count,
+          chunkCount: document.chunk_count,
+          processingError: document.processing_error,
+          createdAt: String(document.created_at),
+          updatedAt: String(document.updated_at),
+        })) as VaultFileRecord[]}
+        project={{ id: String(project.id), name: String(project.name) }}
+      />
+    </ProjectPageShell>
   );
 }

@@ -28,6 +28,7 @@ export async function handleDocumentChunkJob(payload: DocumentJobPayload) {
   await replaceDocumentChunks({
     documentId: payload.documentId,
     companyId: payload.companyId,
+    projectId: payload.projectId,
     chunks: chunks.map((chunk) => ({
       chunkIndex: chunk.chunkIndex,
       content: chunk.content,

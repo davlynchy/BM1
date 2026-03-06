@@ -99,6 +99,25 @@ export async function claimNextJob(workerId: string) {
   return data;
 }
 
+export async function claimJobsBatch(params: {
+  workerId: string;
+  batchSize?: number;
+  jobTypes?: string[];
+}) {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.rpc("claim_jobs_batch", {
+    p_worker_id: params.workerId,
+    p_batch_size: params.batchSize ?? 5,
+    p_job_types: params.jobTypes?.length ? params.jobTypes : null,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []) as Array<Record<string, unknown>>;
+}
+
 export async function completeJob(jobId: string) {
   const supabase = createAdminClient();
   const { error } = await supabase
