@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 
 import { AssistantWorkspace } from "@/components/assistant/assistant-workspace";
-import { ProjectPageShell } from "@/components/projects/project-page-shell";
 import { loadAssistantWorkspaceInitialState } from "@/lib/assistant/workspace-v1";
 import { createClient } from "@/lib/supabase/server";
 
@@ -22,6 +21,12 @@ export default async function ProjectAssistantPage({
   if (!user) {
     notFound();
   }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name, email")
+    .eq("id", user.id)
+    .maybeSingle();
 
   const initialState = await loadAssistantWorkspaceInitialState({
     projectId,
@@ -58,12 +63,20 @@ export default async function ProjectAssistantPage({
   }
 
   return (
-    <ProjectPageShell title="AI Assistant">
-      <AssistantWorkspace
-        initialPrompt={initialPrompt}
-        initialState={initialState}
-        projectId={projectId}
-      />
-    </ProjectPageShell>
+    <main className="mx-auto flex h-[calc(100vh-2.5rem)] min-h-0 w-full max-w-[1220px] flex-col overflow-hidden">
+      <header className="flex-shrink-0 py-2 text-center">
+        <h1 className="font-heading text-5xl">AI Assistant</h1>
+      </header>
+      <div className="min-h-0 flex-1 pt-4">
+        <AssistantWorkspace
+          initialPrompt={initialPrompt}
+          initialState={initialState}
+          projectId={projectId}
+          userDisplayName={
+            profile?.full_name?.trim() || profile?.email?.split("@")[0] || user.email?.split("@")[0] || "User"
+          }
+        />
+      </div>
+    </main>
   );
 }
