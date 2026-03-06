@@ -33,7 +33,7 @@ export default async function AppLayout({
 
   return (
     <div className="min-h-screen bg-bg">
-      <div className="grid gap-6 px-4 py-4 lg:grid-cols-[250px_1fr]">
+      <div className="grid gap-6 px-4 py-4 lg:grid-cols-[auto_1fr]">
         <div className="flex h-[calc(100vh-2rem)] flex-col">
           <WorkbenchSidebar
             companyName={workspace.company.name}

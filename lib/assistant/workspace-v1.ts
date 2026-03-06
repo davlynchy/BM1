@@ -27,8 +27,7 @@ export async function loadAssistantWorkspaceInitialState(params: {
     userId: params.userId,
   });
 
-  const activeThread =
-    (params.threadId ? threads.find((thread) => thread.id === params.threadId) : null) ?? threads[0] ?? null;
+  const activeThread = params.threadId ? threads.find((thread) => thread.id === params.threadId) ?? null : null;
 
   const [documentsResult, outputs] = await Promise.all([
     supabase

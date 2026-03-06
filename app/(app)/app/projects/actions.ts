@@ -28,6 +28,23 @@ const updateTodoStatusSchema = z.object({
   status: z.enum(["open", "in_progress", "done", "dismissed"]),
 });
 
+const updateProjectStatusSchema = z.object({
+  projectId: z.string().uuid(),
+  status: z.enum(["tender", "pre-construction", "construction", "post-construction"]),
+});
+
+const renameProjectSchema = z.object({
+  projectId: z.string().uuid(),
+  name: z.string().min(2).max(160),
+});
+
+const updateProjectCardSchema = z.object({
+  projectId: z.string().uuid(),
+  name: z.string().min(2).max(160),
+  status: z.enum(["tender", "pre-construction", "construction", "post-construction"]),
+  siteDueDate: z.string().optional(),
+});
+
 function getString(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
@@ -174,4 +191,81 @@ export async function updateTodoStatusAction(formData: FormData) {
   }
 
   redirect(`/app/projects/${parsed.data.projectId}?message=To-do+updated.`);
+}
+
+export async function updateProjectStatusAction(formData: FormData) {
+  const parsed = updateProjectStatusSchema.safeParse({
+    projectId: getString(formData, "projectId"),
+    status: getString(formData, "status"),
+  });
+
+  if (!parsed.success) {
+    redirect("/app?message=Invalid+project+status+update.");
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("projects")
+    .update({
+      status: parsed.data.status,
+    })
+    .eq("id", parsed.data.projectId);
+
+  if (error) {
+    redirect(`/app?message=${encodeURIComponent(error.message)}`);
+  }
+
+  redirect("/app?message=Project+status+updated.");
+}
+
+export async function renameProjectAction(formData: FormData) {
+  const parsed = renameProjectSchema.safeParse({
+    projectId: getString(formData, "projectId"),
+    name: getString(formData, "name"),
+  });
+
+  if (!parsed.success) {
+    redirect("/app?message=Invalid+project+name.");
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("projects")
+    .update({ name: parsed.data.name })
+    .eq("id", parsed.data.projectId);
+
+  if (error) {
+    redirect(`/app?message=${encodeURIComponent(error.message)}`);
+  }
+
+  redirect("/app?message=Project+renamed.");
+}
+
+export async function updateProjectCardAction(formData: FormData) {
+  const parsed = updateProjectCardSchema.safeParse({
+    projectId: getString(formData, "projectId"),
+    name: getString(formData, "name"),
+    status: getString(formData, "status"),
+    siteDueDate: getString(formData, "siteDueDate"),
+  });
+
+  if (!parsed.success) {
+    redirect("/app/projects?message=Invalid+project+details.");
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("projects")
+    .update({
+      name: parsed.data.name,
+      status: parsed.data.status,
+      site_due_date: parsed.data.siteDueDate || null,
+    })
+    .eq("id", parsed.data.projectId);
+
+  if (error) {
+    redirect(`/app/projects?message=${encodeURIComponent(error.message)}`);
+  }
+
+  redirect("/app/projects?message=Project+updated.");
 }

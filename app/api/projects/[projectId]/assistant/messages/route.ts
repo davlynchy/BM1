@@ -7,6 +7,7 @@ import {
   getValidatedAssistantThread,
   insertAssistantMessage,
   replaceAssistantThreadSources,
+  updateAssistantThreadTitle,
 } from "@/lib/assistant/store";
 import { requireProjectAccess } from "@/lib/projects/access";
 
@@ -17,6 +18,22 @@ const bodySchema = z.object({
   sourceDocumentIds: z.array(z.string().uuid()).default([]),
   selectedOutputType: z.enum(["email", "memo", "summary", "checklist"]).nullable().optional(),
 });
+
+function buildThreadTitle(message: string) {
+  const cleaned = message
+    .replace(/\s+/g, " ")
+    .replace(/\[(\d+)\]/g, "")
+    .trim();
+  if (!cleaned) {
+    return "New chat";
+  }
+  return cleaned.length > 80 ? `${cleaned.slice(0, 80).trim()}...` : cleaned;
+}
+
+function isGenericTitle(title: string) {
+  const normalized = title.trim().toLowerCase();
+  return normalized === "new query" || normalized === "new chat" || normalized === "project assistant";
+}
 
 export async function POST(
   request: Request,
@@ -32,22 +49,24 @@ export async function POST(
     }
 
     let threadId = parsed.data.threadId;
+    let existingTitle: string | null = null;
     if (!threadId) {
       const thread = await createAssistantThread({
         companyId: String(project.company_id),
         projectId: String(project.id),
         userId: String(user.id),
         threadType: "project_assistant",
-        title: "New query",
+        title: buildThreadTitle(parsed.data.message),
       });
       threadId = String(thread.id);
     } else {
-      await getValidatedAssistantThread({
+      const thread = await getValidatedAssistantThread({
         threadId,
         companyId: String(project.company_id),
         projectId: String(project.id),
         userId: String(user.id),
       });
+      existingTitle = String(thread.title ?? "");
     }
 
     if (parsed.data.sourceDocumentIds.length) {
@@ -66,6 +85,13 @@ export async function POST(
       content: parsed.data.message,
       metadata: {},
     });
+
+    if (existingTitle && isGenericTitle(existingTitle)) {
+      await updateAssistantThreadTitle({
+        threadId,
+        title: buildThreadTitle(parsed.data.message),
+      });
+    }
 
     const run = await createAssistantRun({
       threadId,

@@ -70,7 +70,16 @@ export function CreateProjectModal({
             </select>
           </div>
 
-          <Button type="submit">Create project</Button>
+          <div className="space-y-2">
+            <Label htmlFor="create-project-tender-due">Tender Due</Label>
+            <Input
+              id="create-project-tender-due"
+              name="siteDueDate"
+              type="date"
+            />
+          </div>
+
+          <Button className="mx-auto block" type="submit">Create project</Button>
         </form>
       </Modal>
     </>

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { ensurePrivateBuckets, buildCanonicalStoragePath, getBucketForDocumentType, uploadProjectFile } from "@/lib/documents/storage";
+import { upsertProjectCorrespondenceFromEmail } from "@/lib/correspondence/store";
+import { parseDocumentByMimeType } from "@/lib/documents/parsers";
+import { buildCanonicalStoragePath, getBucketForDocumentType, uploadProjectFile } from "@/lib/documents/storage";
 import { ALLOWED_DOCUMENT_TYPE_SET } from "@/lib/documents/upload-policy";
 import { enqueueDocumentJob } from "@/lib/jobs/queue";
 import { getRequestIp } from "@/lib/api/request";
@@ -36,12 +38,15 @@ export async function POST(
       return NextResponse.json({ error: "No files provided." }, { status: 400 });
     }
 
-    await ensurePrivateBuckets();
-
     const uploadedDocuments = [];
 
     for (const file of files) {
-      if (!ALLOWED_DOCUMENT_TYPE_SET.has(file.type as never)) {
+      const lowerName = file.name.toLowerCase();
+      const inferredMimeType = lowerName.endsWith(".eml")
+        ? "message/rfc822"
+        : (file.type || "");
+
+      if (!ALLOWED_DOCUMENT_TYPE_SET.has(inferredMimeType as never)) {
         return NextResponse.json({ error: `Unsupported file type for ${file.name}.` }, { status: 400 });
       }
 
@@ -49,8 +54,8 @@ export async function POST(
         return NextResponse.json({ error: `${file.name} exceeds the 200MB size limit.` }, { status: 400 });
       }
 
-      const documentType = requestedType || (file.type === "message/rfc822" ? "email" : "project_document");
-      const bucket = getBucketForDocumentType(documentType, "supabase");
+      const documentType = requestedType || (inferredMimeType === "message/rfc822" ? "email" : "project_document");
+      const bucket = getBucketForDocumentType(documentType, "r2");
       const { data: document, error: documentError } = await supabase
         .from("documents")
         .insert({
@@ -59,10 +64,10 @@ export async function POST(
           name: file.name,
           source_filename: file.name,
           document_type: documentType,
-          storage_provider: "supabase",
+          storage_provider: "r2",
           storage_bucket: bucket,
           storage_path: "",
-          mime_type: file.type,
+          mime_type: inferredMimeType,
           file_size: file.size,
           parse_status: "uploaded",
           uploaded_by: user.id,
@@ -85,7 +90,7 @@ export async function POST(
       });
 
       await uploadProjectFile({
-        provider: "supabase",
+        provider: "r2",
         bucket,
         storagePath,
         file,
@@ -115,12 +120,46 @@ export async function POST(
           projectId: project.id,
           bucket,
           storagePath,
-          storageProvider: "supabase",
-          mimeType: file.type,
+          storageProvider: "r2",
+          mimeType: inferredMimeType,
           documentType,
           fileName: file.name,
         },
       });
+
+      if (documentType === "email") {
+        try {
+          const parsed = await parseDocumentByMimeType({
+            mimeType: inferredMimeType,
+            buffer: Buffer.from(await file.arrayBuffer()),
+          });
+          const emailMetadata =
+            parsed.metadata && typeof parsed.metadata.correspondence === "object"
+              ? (parsed.metadata.correspondence as Record<string, unknown>)
+              : null;
+
+          if (emailMetadata) {
+            await upsertProjectCorrespondenceFromEmail({
+              companyId: String(project.company_id),
+              projectId: String(project.id),
+              documentId: String(document.id),
+              metadata: {
+                subject: typeof emailMetadata.subject === "string" ? emailMetadata.subject : "",
+                sender: typeof emailMetadata.sender === "string" ? emailMetadata.sender : "",
+                to: typeof emailMetadata.to === "string" ? emailMetadata.to : "",
+                cc: typeof emailMetadata.cc === "string" ? emailMetadata.cc : "",
+                receivedAt: typeof emailMetadata.receivedAt === "string" ? emailMetadata.receivedAt : undefined,
+                bodyText: typeof emailMetadata.bodyText === "string" ? emailMetadata.bodyText : "",
+                attachments: Array.isArray(emailMetadata.attachments)
+                  ? (emailMetadata.attachments as Array<Record<string, unknown>>)
+                  : [],
+              },
+            });
+          }
+        } catch {
+          // keep upload successful even if extraction preview fails; background jobs will retry parsing/analyze
+        }
+      }
 
       uploadedDocuments.push({
         id: document.id,

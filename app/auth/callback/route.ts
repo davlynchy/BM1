@@ -11,6 +11,7 @@ export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
   const intakeSessionId = requestUrl.searchParams.get("intakeSessionId");
+  const callbackType = requestUrl.searchParams.get("type");
 
   if (!code) {
     return NextResponse.redirect(new URL("/login?message=Missing+auth+code.", request.url));
@@ -28,6 +29,11 @@ export async function GET(request: Request) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  if (callbackType === "recovery") {
+    return NextResponse.redirect(new URL("/reset-password", request.url));
+  }
+
   const companyId = await ensureUserWorkspace();
   const resolvedSessionId = intakeSessionId ?? (await readIntakeSessionCookie());
 

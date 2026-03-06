@@ -2,6 +2,7 @@ export type AssistantCitation = {
   chunkId?: string;
   documentId: string;
   documentName: string;
+  citationOrder?: number;
   page?: number | null;
   snippet: string;
   score?: number;
@@ -40,6 +41,17 @@ export type AssistantMessageMetadata = {
   scanId?: string;
   isPartial?: boolean;
   version?: string;
+  linkedOutputId?: string;
+};
+
+export type AssistantCitationPreview = {
+  documentId: string;
+  documentName: string;
+  pageNumber: number | null;
+  snippet: string;
+  sectionTitle?: string;
+  previewText?: string;
+  pageAnchor?: string;
 };
 
 export type AssistantThreadSummary = {

@@ -10,6 +10,7 @@ export type DocumentIndexStatus =
 export type VaultFileRecord = {
   id: string;
   name: string;
+  relativePath?: string | null;
   documentType: string;
   parseStatus: DocumentIndexStatus;
   fileSize: number | null;

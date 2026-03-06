@@ -45,17 +45,27 @@ export default async function SignupPage({
             ) : null}
             <input name="next" type="hidden" value={next ?? ""} />
             <input name="intakeSessionId" type="hidden" value={intakeSessionId ?? ""} />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="firstName">First name</Label>
+                <Input id="firstName" name="firstName" placeholder="David" required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lastName">Last name</Label>
+                <Input id="lastName" name="lastName" placeholder="Lynch" required />
+              </div>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="company">Company name</Label>
-              <Input id="company" name="companyName" placeholder="Lynch Interiors" />
+              <Input id="company" name="companyName" placeholder="Lynch Interiors" required />
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">Work email</Label>
-              <Input id="email" name="email" type="email" placeholder="you@company.com" />
+              <Input id="email" name="email" type="email" placeholder="you@company.com" required />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input id="password" name="password" type="password" placeholder="Create a password" />
+              <Input id="password" name="password" type="password" placeholder="Create a password" required />
             </div>
             <Button className="w-full" type="submit">
               {intakeSession ? "Create account to continue" : "Create account"}

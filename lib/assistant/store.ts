@@ -111,6 +111,21 @@ export async function getValidatedAssistantThread(params: {
   return data;
 }
 
+export async function updateAssistantThreadTitle(params: {
+  threadId: string;
+  title: string;
+}) {
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("assistant_threads")
+    .update({ title: params.title })
+    .eq("id", params.threadId);
+
+  if (error) {
+    throw error;
+  }
+}
+
 export async function loadAssistantMessages(threadId: string) {
   const supabase = createAdminClient();
   const { data, error } = await supabase

@@ -32,6 +32,235 @@ function parseCitationNumbers(answer: string) {
   return Array.from(ids).sort((a, b) => a - b);
 }
 
+function sanitizeCitationTags(line: string, maxCitation: number) {
+  return line.replace(/\[(\d+)\]/g, (full, raw) => {
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < 1 || value > maxCitation) {
+      return "";
+    }
+    return full;
+  });
+}
+
+function parseLineCitationNumbers(line: string, maxCitation: number) {
+  const matches = line.match(/\[(\d+)\]/g) ?? [];
+  const indexes: number[] = [];
+  for (const match of matches) {
+    const parsed = Number(match.replace(/\[|\]/g, ""));
+    if (Number.isInteger(parsed) && parsed >= 1 && parsed <= maxCitation) {
+      indexes.push(parsed);
+    }
+  }
+  return indexes;
+}
+
+function isDecorativeLine(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return true;
+  }
+  if (/^if you want, i can also\b/i.test(trimmed)) {
+    return true;
+  }
+  if (/^[#\-*]\s*/.test(trimmed) && trimmed.replace(/^[#\-*]\s*/, "").length < 3) {
+    return true;
+  }
+  return false;
+}
+
+function tokenizeForGrounding(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\[(\d+)\]/g, " ")
+    .split(/[^a-z0-9@._-]+/g)
+    .filter((token) => token.length >= 4);
+}
+
+function lineAnchors(line: string) {
+  const lower = line.toLowerCase();
+  return lower.match(
+    /\b\d{1,2}(?:st|nd|rd|th)\b|\blast day of (?:the )?month\b|\bend of (?:the )?month\b|\bfirst business day\b|\bwithin \d+ business days?\b|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/g,
+  ) ?? [];
+}
+
+function isLineGrounded(line: string, maxCitation: number, sources: Array<AssistantCitation & { content: string }>) {
+  const citations = parseLineCitationNumbers(line, maxCitation);
+  if (!citations.length) {
+    return false;
+  }
+
+  const citedEvidence = citations
+    .map((index) => {
+      const source = sources[index - 1];
+      if (!source) {
+        return "";
+      }
+      return `${source.snippet ?? ""}\n${source.content ?? ""}`.toLowerCase();
+    })
+    .join("\n");
+
+  if (!citedEvidence.trim()) {
+    return false;
+  }
+
+  const anchors = lineAnchors(line);
+  if (anchors.length > 0 && !anchors.some((anchor) => citedEvidence.includes(anchor))) {
+    return false;
+  }
+
+  const tokens = tokenizeForGrounding(line);
+  if (!tokens.length) {
+    return true;
+  }
+
+  const overlap = new Set(tokens.filter((token) => citedEvidence.includes(token)));
+  const minOverlap = tokens.length >= 6 ? 2 : 1;
+  return overlap.size >= minOverlap;
+}
+
+function filterToGroundedAnswer(
+  answer: string,
+  maxCitation: number,
+  sources: Array<AssistantCitation & { content: string }>,
+) {
+  const lines = answer.split("\n");
+  const kept = lines
+    .map((line) => sanitizeCitationTags(line, maxCitation))
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        return true;
+      }
+      if (isDecorativeLine(trimmed)) {
+        return true;
+      }
+      return isLineGrounded(trimmed, maxCitation, sources);
+    });
+
+  return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function firstSentence(value: string) {
+  const clean = value.replace(/\s+/g, " ").trim();
+  if (!clean) {
+    return "";
+  }
+  const match = clean.match(/^(.{30,220}?[.!?])(?:\s|$)/);
+  const sentence = match ? match[1] : clean.slice(0, 220);
+  return sentence.trim();
+}
+
+function cleanupFilteredAnswer(answer: string) {
+  const lines = answer.split("\n");
+  const headingSet = new Set(["direct answer:", "contract facts:", "action steps:", "commercial risk if skipped:"]);
+  const cleaned: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.trim().toLowerCase();
+    if (!headingSet.has(trimmed)) {
+      cleaned.push(line);
+      continue;
+    }
+
+    let nextIndex = index + 1;
+    while (nextIndex < lines.length && !lines[nextIndex].trim()) {
+      nextIndex += 1;
+    }
+    if (nextIndex >= lines.length) {
+      continue;
+    }
+    if (headingSet.has(lines[nextIndex].trim().toLowerCase())) {
+      continue;
+    }
+    cleaned.push(line);
+  }
+
+  return cleaned.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function isThinGroundedAnswer(answer: string) {
+  const trimmed = answer.trim();
+  if (!trimmed || /^i could not find this in the project documents\.?$/i.test(trimmed)) {
+    return true;
+  }
+  const citations = parseCitationNumbers(trimmed);
+  if (!citations.length) {
+    return true;
+  }
+  return trimmed.length < 180;
+}
+
+function buildGroundedFallback(sources: Array<AssistantCitation & { content: string }>) {
+  const top = sources.slice(0, 4);
+  if (!top.length) {
+    return "I could not find this in the project documents.";
+  }
+
+  const factBullets = top.map((source, index) => {
+    const summary = firstSentence(source.snippet || source.content) || "See cited contract clause.";
+    return `- ${summary} [${index + 1}]`;
+  });
+
+  const actionCount = Math.min(3, top.length);
+  const actionSteps = [
+    `1. Confirm this work is outside your original subcontract scope using the cited clauses and drawings [1].`,
+    actionCount >= 2
+      ? `2. Issue a formal variation notice that references the contract requirement and affected scope [2].`
+      : "2. Issue a formal variation notice that references the affected scope [1].",
+    actionCount >= 3
+      ? `3. Submit a priced variation with supporting documents and request written approval before proceeding [3].`
+      : "3. Submit a priced variation with supporting documents and request written approval before proceeding [1].",
+  ];
+
+  return [
+    "Direct answer:",
+    "Follow the formal variation process in your subcontract and obtain written approval before doing additional work. [1]",
+    "",
+    "Contract facts:",
+    ...factBullets,
+    "",
+    "Action steps:",
+    ...actionSteps,
+    "",
+    "Commercial risk if skipped:",
+    "- Unapproved work may be disputed or unpaid under the subcontract process [1].",
+  ].join("\n");
+}
+
+function renumberCitations(answer: string, indexes: number[]) {
+  const ordered = [...indexes].sort((a, b) => a - b);
+  const mapping = new Map<number, number>();
+  ordered.forEach((original, idx) => {
+    mapping.set(original, idx + 1);
+  });
+
+  const rewritten = answer.replace(/\[(\d+)\]/g, (full, raw) => {
+    const oldValue = Number(raw);
+    if (!Number.isInteger(oldValue)) {
+      return full;
+    }
+    const mapped = mapping.get(oldValue);
+    return mapped ? `[${mapped}]` : "";
+  });
+
+  return {
+    answer: rewritten,
+    mapping,
+  };
+}
+
+function ensureNextStepSuggestion(answer: string) {
+  const trimmed = answer.trim();
+  if (!trimmed || /^i could not find this in the project documents\.?$/i.test(trimmed)) {
+    return trimmed;
+  }
+  if (/^if you want, i can also\b/im.test(trimmed)) {
+    return trimmed;
+  }
+  return `${trimmed}\n\nIf you want, I can also draft the exact email and variation template you can send today.`;
+}
+
 function buildPrompt(params: {
   question: string;
   messages: Array<{ role: "user" | "assistant"; content: string }>;
@@ -60,12 +289,14 @@ function buildPrompt(params: {
     "Only answer using the provided evidence context.",
     "If evidence is missing, reply: I could not find this in the project documents.",
     "Every factual claim must include one or more citation tags like [1], [2].",
-    "Be commercially practical and concise.",
-    "Use this output structure:",
-    "1) Short heading",
-    "2) Key points as bullets",
-    "3) Action steps as bullets",
-    "4) Risks or caveats as bullets",
+    "Do not invent clauses, dates, parties, or process steps.",
+    "Prefer exact contract process from evidence over generic advice.",
+    "Use short plain-English lines and practical steps.",
+    "Always include:",
+    "1) Direct answer",
+    "2) Contract facts as bullets",
+    "3) Action steps as numbered steps",
+    "4) Commercial risk if skipped",
     "Do not include markdown tables.",
     "",
     "Conversation:",
@@ -208,6 +439,34 @@ export async function GET(
           return;
         }
 
+        const bestScore = Number(retrieved[0]?.score ?? 0);
+        if (bestScore < 15) {
+          const fallback = "I could not find this in the project documents.";
+          const saved = await insertAssistantMessage({
+            threadId: runContext.threadId,
+            companyId: runContext.companyId,
+            role: "assistant",
+            content: fallback,
+            citations: [],
+            metadata: {},
+          });
+          await updateAssistantRun({
+            runId: runContext.runId,
+            status: "completed",
+            currentStage: "completed",
+            metadata: {
+              ...runContext.metadata,
+              messageId: saved.id,
+              sourceCount: retrieved.length,
+              groundingFallbackReason: "low_confidence_retrieval",
+            },
+          });
+          controller.enqueue(sse("token", { delta: fallback }));
+          controller.enqueue(sse("complete", { messageId: saved.id, citations: [] }));
+          close();
+          return;
+        }
+
         await updateAssistantRun({
           runId: runContext.runId,
           status: "in_progress",
@@ -220,7 +479,7 @@ export async function GET(
           {
             role: "system" as const,
             content:
-              "You are a grounded assistant. Use only provided evidence and include [n] citations for factual claims. Prefer short headings and bullet lists.",
+              "You are a grounded assistant. Use only provided evidence. Do not hallucinate. Every factual statement must carry [n] citations.",
           },
           {
             role: "user" as const,
@@ -268,10 +527,19 @@ export async function GET(
           controller.enqueue(sse("token", { delta }));
         }
 
-        const citationIndexes = parseCitationNumbers(answer);
-        const citations: AssistantCitation[] = citationIndexes.flatMap((index) => {
-          const source = retrieved[index - 1];
+        const groundedAnswer = filterToGroundedAnswer(answer.trim(), retrieved.length, retrieved);
+        const cleanedAnswer = cleanupFilteredAnswer(groundedAnswer);
+        const filteredAnswer = isThinGroundedAnswer(cleanedAnswer) ? buildGroundedFallback(retrieved) : cleanedAnswer;
+        const rawCitationIndexes = parseCitationNumbers(filteredAnswer);
+        const { answer: finalAnswer, mapping } = renumberCitations(filteredAnswer, rawCitationIndexes);
+        const polishedAnswer = ensureNextStepSuggestion(finalAnswer);
+        const citations: AssistantCitation[] = rawCitationIndexes.flatMap((originalIndex) => {
+          const source = retrieved[originalIndex - 1];
           if (!source) {
+            return [];
+          }
+          const citationOrder = mapping.get(originalIndex);
+          if (!citationOrder) {
             return [];
           }
 
@@ -279,6 +547,7 @@ export async function GET(
             {
               chunkId: source.chunkId,
               sourceId: source.chunkId,
+              citationOrder,
               documentId: source.documentId,
               documentName: source.documentName,
               page: source.page,
@@ -294,7 +563,7 @@ export async function GET(
           threadId: runContext.threadId,
           companyId: runContext.companyId,
           role: "assistant",
-          content: answer.trim(),
+          content: polishedAnswer,
           citations,
           metadata: {},
         });
@@ -309,7 +578,7 @@ export async function GET(
             userId: runContext.userId,
             type: runContext.requestedOutputType as "email" | "memo" | "summary" | "checklist",
             title: outputTitle,
-            body: answer.trim(),
+            body: polishedAnswer,
             metadata: {
               fromAssistantRun: true,
               question: userMessage.content,

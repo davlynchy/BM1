@@ -21,15 +21,13 @@ export function Modal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4">
-      <div className="w-full max-w-lg rounded-xl border border-border bg-panel p-6 shadow-panel">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="font-heading text-2xl">{title}</h2>
-            {description ? <p className="mt-2 text-sm text-muted">{description}</p> : null}
-          </div>
-          <button className="text-sm text-muted" onClick={onClose} type="button">
+      <div className="relative w-full max-w-lg rounded-xl border border-border bg-panel p-6 shadow-panel">
+        <button className="absolute right-6 top-5 text-sm text-muted" onClick={onClose} type="button">
             Close
-          </button>
+        </button>
+        <div className="text-center">
+          <h2 className="font-heading text-2xl">{title}</h2>
+          {description ? <p className="mt-2 text-sm text-muted">{description}</p> : null}
         </div>
         <div className="mt-6">{children}</div>
       </div>

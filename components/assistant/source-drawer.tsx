@@ -9,12 +9,16 @@ export function SourceDrawer({
   onToggle,
   attachedSources,
   citations,
+  selectedCitationOrder,
+  onSelectCitation,
 }: {
   documents: VaultFileRecord[];
   selectedDocumentIds: string[];
   onToggle: (documentId: string) => void;
   attachedSources: AssistantSourceSelection[];
   citations: AssistantCitation[];
+  selectedCitationOrder?: number | null;
+  onSelectCitation?: (order: number) => void;
 }) {
   const showSelection = citations.length === 0;
 
@@ -23,26 +27,36 @@ export function SourceDrawer({
       <p className="font-medium text-text">Sources</p>
       <p className="mt-1 text-xs text-muted">
         {citations.length
-          ? "Evidence referenced in the latest assistant answer."
+          ? "Evidence referenced in the selected assistant answer."
           : "Select indexed vault files for this thread."}
       </p>
 
       {citations.length ? (
         <div className="mt-3 space-y-2">
-          {citations.map((citation, index) => (
-            <div className="rounded-lg border border-border bg-panel px-3 py-2" key={`${citation.sourceId}-${index}`}>
+          {citations.map((citation, index) => {
+            const citationNumber = citation.citationOrder ?? index + 1;
+            return (
+            <button
+              className={`w-full rounded-lg border px-3 py-2 text-left ${
+                selectedCitationOrder === citationNumber ? "border-brand bg-brand/10" : "border-border bg-panel"
+              }`}
+              key={`${citation.sourceId}-${index}`}
+              onClick={() => onSelectCitation?.(citationNumber)}
+              type="button"
+            >
               <div className="flex items-center gap-2">
                 <span className="inline-flex min-w-5 items-center justify-center rounded-sm bg-lime-500 px-1 text-xs font-bold leading-5 text-black">
-                  {index + 1}
+                  {citationNumber}
                 </span>
                 <p className="truncate text-sm font-medium text-text">
                   {citation.documentName}
-                  {(citation.page ?? citation.pageNumber) ? ` • p.${citation.page ?? citation.pageNumber}` : ""}
+                  {(citation.page ?? citation.pageNumber) ? ` - p.${citation.page ?? citation.pageNumber}` : ""}
                 </p>
               </div>
               <p className="mt-2 text-xs leading-5 text-muted">{citation.snippet}</p>
-            </div>
-          ))}
+            </button>
+          );
+          })}
         </div>
       ) : null}
 
@@ -58,7 +72,7 @@ export function SourceDrawer({
               <div className="min-w-0">
                 <p className="truncate font-medium text-text">{document.name}</p>
                 <p className="text-sm text-muted">
-                  {document.documentType} • {document.parseStatus}
+                  {document.documentType} - {document.parseStatus}
                 </p>
               </div>
             </label>

@@ -45,8 +45,13 @@ function tokenize(value: string) {
 function buildSnippet(content: string, tokens: string[]) {
   const lower = content.toLowerCase();
   const matched = tokens.find((token) => lower.includes(token));
-  const start = matched ? Math.max(lower.indexOf(matched) - 100, 0) : 0;
-  const end = Math.min(content.length, start + 280);
+  const rawStart = matched ? Math.max(lower.indexOf(matched) - 180, 0) : 0;
+  const previousBoundary = Math.max(
+    content.lastIndexOf("\n", rawStart),
+    content.lastIndexOf(". ", rawStart),
+  );
+  const start = previousBoundary > -1 ? previousBoundary + 1 : rawStart;
+  const end = Math.min(content.length, start + 420);
   return content.slice(start, end).replace(/\s+/g, " ").trim();
 }
 

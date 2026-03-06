@@ -48,6 +48,63 @@ export function UploadDropzone({
     onFilesSelect?.(nextFiles);
   }
 
+  function selectFiles(files: File[]) {
+    const nextFile = files[0] ?? null;
+    onFileSelect?.(nextFile);
+    onFilesSelect?.(files);
+  }
+
+  async function readEntry(entry: FileSystemEntry): Promise<File[]> {
+    if (entry.isFile) {
+      return await new Promise<File[]>((resolve) => {
+        (entry as FileSystemFileEntry).file(
+          (file) => resolve(file ? [file] : []),
+          () => resolve([]),
+        );
+      });
+    }
+
+    if (!entry.isDirectory) {
+      return [];
+    }
+
+    const reader = (entry as FileSystemDirectoryEntry).createReader();
+    const children = await new Promise<FileSystemEntry[]>((resolve) => {
+      reader.readEntries(
+        (entries) => resolve(entries ?? []),
+        () => resolve([]),
+      );
+    });
+
+    const nested = await Promise.all(children.map((child) => readEntry(child)));
+    return nested.flat();
+  }
+
+  async function extractDroppedFiles(dataTransfer: DataTransfer) {
+    const directFiles = Array.from(dataTransfer.files ?? []);
+    if (directFiles.length) {
+      return directFiles;
+    }
+
+    const items = Array.from(dataTransfer.items ?? []);
+    const fileItems = items
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => Boolean(file));
+    if (fileItems.length) {
+      return fileItems;
+    }
+
+    const entries = items
+      .map((item) => item.webkitGetAsEntry?.())
+      .filter((entry): entry is FileSystemEntry => Boolean(entry));
+    if (entries.length) {
+      const nested = await Promise.all(entries.map((entry) => readEntry(entry)));
+      return nested.flat();
+    }
+
+    return [];
+  }
+
   return (
     <div
       className={cn(
@@ -65,10 +122,11 @@ export function UploadDropzone({
         event.preventDefault();
         setDragging(true);
       }}
-      onDrop={(event) => {
+      onDrop={async (event) => {
         event.preventDefault();
         setDragging(false);
-        selectFile(event.dataTransfer.files);
+        const files = await extractDroppedFiles(event.dataTransfer);
+        selectFiles(files);
       }}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {

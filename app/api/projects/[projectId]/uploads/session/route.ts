@@ -18,7 +18,7 @@ const manifestFileSchema = z.object({
   clientKey: z.string().min(1).max(120),
   name: z.string().min(1).max(260),
   size: z.number().int().positive(),
-  type: z.string().min(1),
+  type: z.string().max(120).optional().default(""),
   relativePath: z.string().max(1024).nullish(),
 });
 
@@ -29,6 +29,30 @@ const sessionSchema = z.object({
 
 function inferDocumentType(mimeType: string) {
   return mimeType === "message/rfc822" ? "email" : "project_document";
+}
+
+function inferMimeType(fileName: string, providedType: string) {
+  if (providedType && ALLOWED_DOCUMENT_TYPE_SET.has(providedType as never)) {
+    return providedType;
+  }
+
+  const lowerName = fileName.toLowerCase();
+  if (lowerName.endsWith(".eml")) {
+    return "message/rfc822";
+  }
+  if (lowerName.endsWith(".pdf")) {
+    return "application/pdf";
+  }
+  if (lowerName.endsWith(".docx")) {
+    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  }
+  if (lowerName.endsWith(".xlsx")) {
+    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  }
+  if (lowerName.endsWith(".txt")) {
+    return "text/plain";
+  }
+  return providedType || "";
 }
 
 function normalizeRelativePath(relativePath: string | null | undefined) {
@@ -73,7 +97,8 @@ export async function POST(
     }
 
     for (const file of parsed.data.files) {
-      if (!ALLOWED_DOCUMENT_TYPE_SET.has(file.type as never)) {
+      const inferredMimeType = inferMimeType(file.name, file.type);
+      if (!ALLOWED_DOCUMENT_TYPE_SET.has(inferredMimeType as never)) {
         return NextResponse.json({ error: `Unsupported file type for ${file.name}.` }, { status: 400 });
       }
 
@@ -103,7 +128,8 @@ export async function POST(
     const descriptors = [];
 
     for (const file of parsed.data.files) {
-      const documentType = inferDocumentType(file.type);
+      const inferredMimeType = inferMimeType(file.name, file.type);
+      const documentType = inferDocumentType(inferredMimeType);
       const bucket = getBucketForDocumentType(documentType, "r2");
       const relativePath = normalizeRelativePath(file.relativePath);
       const { data: document, error: documentError } = await supabase
@@ -117,7 +143,7 @@ export async function POST(
           storage_provider: "r2",
           storage_bucket: bucket,
           storage_path: "",
-          mime_type: file.type,
+          mime_type: inferredMimeType,
           file_size: file.size,
           parse_status: "uploaded",
           uploaded_by: user.id,
@@ -141,7 +167,7 @@ export async function POST(
       });
       const upload = await createMultipartUpload({
         key: storagePath,
-        contentType: file.type,
+        contentType: inferredMimeType,
         metadata: {
           documentId: document.id,
           companyId: String(project.company_id),
@@ -167,7 +193,7 @@ export async function POST(
         uploadId: upload.uploadId,
         bucket,
         storagePath,
-        mimeType: file.type,
+        mimeType: inferredMimeType,
         relativePath,
         partSize: MULTIPART_PART_SIZE,
         partCount: Math.max(1, Math.ceil(file.size / MULTIPART_PART_SIZE)),

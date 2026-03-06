@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { LoaderCircle, RefreshCcw, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { UploadDropzone } from "@/components/ui/upload-dropzone";
@@ -13,10 +13,17 @@ const ACCEPTED_TYPES = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "text/plain",
+  ".eml",
   "message/rfc822",
 ];
 
-export function ProjectDocumentUpload({ projectId }: { projectId: string }) {
+export function ProjectDocumentUpload({
+  projectId,
+  relativePathPrefix,
+}: {
+  projectId: string;
+  relativePathPrefix?: string | null;
+}) {
   const router = useRouter();
   const [files, setFiles] = useState<
     Array<{
@@ -104,12 +111,10 @@ export function ProjectDocumentUpload({ projectId }: { projectId: string }) {
     };
   }
 
-  async function handleUpload(clientKeys?: string[]) {
-    const targetFiles = files.filter((file) =>
-      clientKeys?.length
-        ? clientKeys.includes(file.clientKey)
-        : file.status === "ready" || file.status === "failed",
-    );
+  async function handleUpload(targetFilesInput?: typeof files) {
+    const targetFiles = targetFilesInput?.length
+      ? targetFilesInput
+      : files.filter((file) => file.status === "ready" || file.status === "failed");
 
     if (!targetFiles.length) {
       setError("Select one or more files to upload.");
@@ -250,19 +255,29 @@ export function ProjectDocumentUpload({ projectId }: { projectId: string }) {
         folderButtonLabel="Choose folder"
         multiple
         onFilesSelect={(nextFiles) => {
-          setFiles(
-            nextFiles.map((file) => ({
-              clientKey: crypto.randomUUID(),
-              file,
-              relativePath:
-                ((file as File & { webkitRelativePath?: string }).webkitRelativePath || "")
-                  .replace(/\\/g, "/") || null,
-              status: "ready",
-              progress: 0,
-              error: null,
-            })),
-          );
+          const nextUploadFiles = nextFiles.map((file) => ({
+            clientKey: crypto.randomUUID(),
+            file,
+            relativePath: (() => {
+              const originalRelativePath = ((file as File & { webkitRelativePath?: string }).webkitRelativePath || "")
+                .replace(/\\/g, "/")
+                .replace(/^\/+|\/+$/g, "");
+              const basePath = (relativePathPrefix ?? "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+              if (basePath && originalRelativePath) {
+                return `${basePath}/${originalRelativePath}`;
+              }
+              if (basePath) {
+                return `${basePath}/${file.name}`;
+              }
+              return originalRelativePath || null;
+            })(),
+            status: "ready" as const,
+            progress: 0,
+            error: null,
+          }));
+          setFiles(nextUploadFiles);
           setError(null);
+          void handleUpload(nextUploadFiles);
         }}
         title="Drop project documents here"
         description="PDF, DOCX, XLSX, TXT, and EML files are supported. Folder uploads preserve relative paths."
@@ -300,32 +315,19 @@ export function ProjectDocumentUpload({ projectId }: { projectId: string }) {
           {error}
         </div>
       ) : null}
-      <div className="flex gap-3">
-        <Button disabled={isPending} onClick={() => void handleUpload()} type="button">
-          {isPending ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : null}
-          Upload documents
-        </Button>
-        {failedFiles.length ? (
+      {failedFiles.length ? (
+        <div className="flex gap-3">
           <Button
             disabled={isPending}
-            onClick={() => void handleUpload(failedFiles.map((file) => file.clientKey))}
+            onClick={() => void handleUpload(failedFiles)}
             type="button"
             variant="secondary"
           >
             <RotateCcw className="mr-2 h-4 w-4" />
             Retry failed
           </Button>
-        ) : null}
-        <Button
-          disabled={isPending}
-          onClick={() => startTransition(() => router.refresh())}
-          type="button"
-          variant="secondary"
-        >
-          <RefreshCcw className="mr-2 h-4 w-4" />
-          Refresh status
-        </Button>
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
